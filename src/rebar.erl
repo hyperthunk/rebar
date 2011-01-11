@@ -173,6 +173,8 @@ delete-deps                          Delete fetched dependencies
 
 generate    [dump_spec=0/1]          Build release with reltool
 
+upgrade     [oldreleasepath=path]    Build an upgrade package
+
 eunit       [suite=foo]              Run eunit [test/foo_tests.erl] tests
 ct          [suite=] [case=]         Run common_test suites in ./test
 
@@ -227,7 +229,7 @@ command_names() ->
     ["build-plt", "check-deps", "check-plt", "clean", "compile", "create",
      "create-app", "create-node", "ct", "delete-deps", "dialyze", "doc",
      "eunit", "generate", "get-deps", "help", "list-templates", "update-deps",
-     "version", "xref"].
+     "upgrade", "version", "xref"].
 
 unabbreviate_command_names([]) ->
     [];
