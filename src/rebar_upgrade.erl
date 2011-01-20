@@ -74,7 +74,7 @@ run_checks(OldVerPath, ReltoolFile) ->
     {ok, {release, {NewReleaseName, NewReleaseVer}}}.
 
 get_release_name(ReltoolFile) ->
-    {ok, [{sys, ConfigList}, _]} = file:consult(ReltoolFile),
+    {ok, [{sys, ConfigList}| _]} = file:consult(ReltoolFile),
     %% expect the first rel in the proplist to be the one you want
     {rel, ReleaseName, ReleaseVersion, _} = proplists:lookup(rel, ConfigList),
     {ok, {release, {ReleaseName, ReleaseVersion}}}.
