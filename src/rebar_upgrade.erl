@@ -42,9 +42,11 @@ upgrade(_Config, ReltoolFile) ->
             {NewReleaseName, NewReleaseVer} =
                 run_checks(OldVerPath, ReltoolFile),
             Release_NewVer = NewReleaseName ++ "_" ++ NewReleaseVer,
+            OrigPath = code:get_path(),
             setup(OldVerPath, NewReleaseName, NewReleaseVer, Release_NewVer),
             run_systools(Release_NewVer, NewReleaseName),
-            cleanup(Release_NewVer)
+            cleanup(Release_NewVer),
+            code:set_path(OrigPath)
     end.
 
 %% internal api
