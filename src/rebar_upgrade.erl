@@ -52,15 +52,14 @@ upgrade(_Config, ReltoolFile) ->
 run_checks(OldVerPath, ReltoolFile) ->
     true = release_path_check(OldVerPath),
 
-    {ok, {release, {ReleaseName, ReleaseVersion}}} =
-        get_release_name(ReltoolFile),
+    {ReleaseName, ReleaseVersion} = get_release_name(ReltoolFile),
 
     true = release_path_check("./" ++ ReleaseName),
 
-    {ok, {release, {NewReleaseName, NewReleaseVer}}} =
+    {NewReleaseName, NewReleaseVer} =
         get_release_version(ReleaseName, "./" ++ ReleaseName),
 
-    {ok, {release, {OldReleaseName, OldReleaseVer}}} =
+    {OldReleaseName, OldReleaseVer} =
         get_release_version(ReleaseName, OldVerPath),
 
     true = release_name_check(NewReleaseName, OldReleaseName,
@@ -78,7 +77,7 @@ get_release_name(ReltoolFile) ->
     {ok, [{sys, ConfigList}| _]} = file:consult(ReltoolFile),
     %% expect the first rel in the proplist to be the one you want
     {rel, ReleaseName, ReleaseVersion, _} = proplists:lookup(rel, ConfigList),
-    {ok, {release, {ReleaseName, ReleaseVersion}}}.
+    {ReleaseName, ReleaseVersion}.
 
 get_release_version(ReleaseName, Path) ->
     [RelFile] = filelib:wildcard(Path ++ "/releases/*/"
@@ -86,7 +85,7 @@ get_release_version(ReleaseName, Path) ->
     [BinDir|_] = re:replace(RelFile, ReleaseName ++ "\\.rel", ""),
     {ok, [{release, {ReleaseName1, ReleaseVer}, _, _}]} =
         file:consult(binary_to_list(BinDir) ++ ReleaseName ++ ".rel"),
-    {ok, {release, {ReleaseName1, ReleaseVer}}}.
+    {ReleaseName1, ReleaseVer}.
 
 release_path_check(Path) ->
     case filelib:is_dir(Path) of
