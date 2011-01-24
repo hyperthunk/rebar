@@ -54,10 +54,12 @@ run_checks(OldVerPath, ReltoolFile) ->
 
     {ReleaseName, ReleaseVersion} = get_release_name(ReltoolFile),
 
-    true = release_path_check("./" ++ ReleaseName),
+    ReleaseNamePath = filename:join([".", ReleaseName]),
+
+    true = release_path_check(ReleaseNamePath),
 
     {NewReleaseName, NewReleaseVer} =
-        get_release_version(ReleaseName, "./" ++ ReleaseName),
+        get_release_version(ReleaseName, ReleaseNamePath),
 
     {OldReleaseName, OldReleaseVer} =
         get_release_version(ReleaseName, OldVerPath),
@@ -92,15 +94,14 @@ get_release_name(ReltoolFile) ->
             {ReleaseName, ReleaseVersion};
         _ ->
             ?ABORT("rebar had an issue parsing your reltool.config~n", [])
-    end,
-
+    end.
 
 get_release_version(ReleaseName, Path) ->
-    [RelFile] = filelib:wildcard(Path ++ "/releases/*/"
-                                 ++ ReleaseName ++ ".rel"),
+    [RelFile] = filelib:wildcard(
+                  filename:join([Path, "releases", "*", ReleaseName, ".rel"])),
     [BinDir|_] = re:replace(RelFile, ReleaseName ++ "\\.rel", ""),
     {ok, [{release, {ReleaseName1, ReleaseVer}, _, _}]} =
-        file:consult(binary_to_list(BinDir) ++ ReleaseName ++ ".rel"),
+        file:consult(filename:join([binary_to_list(BinDir), ReleaseName ++ ".rel"])),
     {ReleaseName1, ReleaseVer}.
 
 release_path_check(Path) ->
@@ -122,15 +123,14 @@ release_name_check(_, _, Msg) ->
     ?ABORT("~p~n", [Msg]).
 
 setup(OldVerPath, NewReleaseName, NewReleaseVer, Release_NewVer) ->
-    NewRelPath = "./" ++ NewReleaseName,
-    Src = NewRelPath ++ "/releases/" ++ NewReleaseVer ++ "/"
-        ++ NewReleaseName ++ ".rel",
-    Dst = "./" ++ Release_NewVer ++ ".rel",
+    NewRelPath = filename:join([".", NewReleaseName]),
+    Src = filename:join([NewRelPath, "releases", NewReleaseVer, NewReleaseName ++ ".rel"]),
+    Dst = filename:join([".", Release_NewVer ++ ".rel"]),
     {ok, _} = file:copy(Src, Dst),
-    ok = code:add_pathsa(filelib:wildcard(NewRelPath ++ "/*")),
-    ok = code:add_pathsa(filelib:wildcard(NewRelPath ++ "/lib/*/ebin")),
-    ok = code:add_pathsa(filelib:wildcard(OldVerPath ++ "/lib/*/ebin")),
-    ok = code:add_pathsa(filelib:wildcard(OldVerPath ++ "/releases/*")).
+    ok = code:add_pathsa(filelib:wildcard(filename:join([NewRelPath, "*"]))),
+    ok = code:add_pathsa(filelib:wildcard(filename:join([NewRelPath, "lib", "*", "ebin"]))),
+    ok = code:add_pathsa(filelib:wildcard(filename:join([OldVerPath, "lib", "*", "ebin"]))),
+    ok = code:add_pathsa(filelib:wildcard(filename:join([OldVerPath, "releases", "*"]))).
 
 run_systools(NewReleaseVer, ReleaseName) ->
     Opts = [silent],
@@ -156,7 +156,7 @@ run_systools(NewReleaseVer, ReleaseName) ->
 
 cleanup(Release_NewVer) ->
     ?DEBUG("removing files needed for building the upgrade~n", []),
-    ok = file:delete("./" ++ Release_NewVer ++ ".rel"),
-    ok = file:delete("./" ++ Release_NewVer ++ ".boot"),
-    ok = file:delete("./" ++ Release_NewVer ++ ".script"),
-    ok = file:delete("./relup").
+    ok = file:delete(filename:join([".", Release_NewVer ++ ".rel"])),
+    ok = file:delete(filename:join([".", Release_NewVer ++ ".boot"])),
+    ok = file:delete(filename:join([".", Release_NewVer ++ ".script"),
+    ok = file:delete(filename:join([".", "relup"])).
