@@ -39,7 +39,7 @@ upgrade(_Config, ReltoolFile) ->
             ?ABORT("oldreleasepath=PATH is required to "
                    "create upgrade package~n", []);
         OldVerPath ->
-            {ok, {release, {NewReleaseName, NewReleaseVer}}} =
+            {NewReleaseName, NewReleaseVer} =
                 run_checks(OldVerPath, ReltoolFile),
             Release_NewVer = NewReleaseName ++ "_" ++ NewReleaseVer,
             setup(OldVerPath, NewReleaseName, NewReleaseVer, Release_NewVer),
@@ -67,10 +67,21 @@ run_checks(OldVerPath, ReltoolFile) ->
     true = release_name_check(ReleaseName, NewReleaseName,
                               "reltool and .rel release names dont match"),
 
-    true = new_old_release_version_check(NewReleaseVer, OldReleaseVer),
-    true = reltool_release_version_check(ReleaseVersion, NewReleaseVer),
+    case release_version_check(NewReleaseVer, OldReleaseVer) of
+        true ->
+            ?ABORT("new and old .rel contain the same version~n", []);
+        false ->
+            true
+    end,
 
-    {ok, {release, {NewReleaseName, NewReleaseVer}}}.
+    case release_version_check(ReleaseVersion, NewReleaseVer) of
+        true ->
+            true
+        false ->
+            ?ABORT("reltool version and .rel versions dont match~n", [])
+    end,
+    
+    {NewReleaseName, NewReleaseVer}.
 
 get_release_name(ReltoolFile) ->
     %% expect sys to be the first proplist in reltool.config
@@ -95,15 +106,10 @@ release_path_check(Path) ->
             ?ABORT("release directory doesn't exist (~p)~n", [Path])
     end.
 
-reltool_release_version_check(Version1, Version2) when Version1 == Version2 ->
+release_version_check(Version1, Version2) when Version1 == Version2 ->
     true;
-reltool_release_version_check(_, _) ->
-    ?ABORT("reltool version and .rel versions dont match~n", []).
-
-new_old_release_version_check(Version1, Version2) when Version1 /= Version2 ->
-    true;
-new_old_release_version_check(_, _) ->
-    ?ABORT("new and old .rel contain the same version~n", []).
+release_version_check(_, _) ->
+    false.
 
 release_name_check(Name1, Name2, _) when Name1 == Name2 ->
     true;
