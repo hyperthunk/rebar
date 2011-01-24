@@ -39,14 +39,27 @@ upgrade(_Config, ReltoolFile) ->
             ?ABORT("oldreleasepath=PATH is required to "
                    "create upgrade package~n", []);
         OldVerPath ->
+            %% Run checks to make sure that building a package is possible
             {NewReleaseName, NewReleaseVer} =
                 run_checks(OldVerPath, ReltoolFile),
             Release_NewVer = NewReleaseName ++ "_" ++ NewReleaseVer,
+
+            %% Save the code path prior to doing anything
             OrigPath = code:get_path(),
+            
+            %% Prepare the environment for building the package
             setup(OldVerPath, NewReleaseName, NewReleaseVer, Release_NewVer),
+            
+            %% Build the package
             run_systools(Release_NewVer, NewReleaseName),
+
+            %% Clean up files that systools created
             cleanup(Release_NewVer),
-            code:set_path(OrigPath)
+
+            %% Restore original path
+            true = code:set_path(OrigPath),
+            
+            ok
     end.
 
 %% internal api
@@ -70,14 +83,14 @@ run_checks(OldVerPath, ReltoolFile) ->
         true ->
             true;
         false ->
-            ?ABORT("New and old .rel release names do not match~n")
+            ?ABORT("New and old .rel release names do not match~n", [])
     end,
 
     case release_name_check(ReleaseName, NewReleaseName) of
         true ->
             true;
         false ->
-            ?ABORT("Reltool and .rel release names do not match~n")
+            ?ABORT("Reltool and .rel release names do not match~n", [])
     end,
 
     case release_version_check(NewReleaseVer, OldReleaseVer) of
@@ -89,7 +102,7 @@ run_checks(OldVerPath, ReltoolFile) ->
 
     case release_version_check(ReleaseVersion, NewReleaseVer) of
         true ->
-            true
+            true;
         false ->
             ?ABORT("Reltool and .rel versions do not match~n", [])
     end,
@@ -109,7 +122,7 @@ get_release_name(ReltoolFile) ->
 
 get_release_version(ReleaseName, Path) ->
     [RelFile] = filelib:wildcard(
-                  filename:join([Path, "releases", "*", ReleaseName, ".rel"])),
+                  filename:join([Path, "releases", "*", ReleaseName ++ ".rel"])),
     [BinDir|_] = re:replace(RelFile, ReleaseName ++ "\\.rel", ""),
     {ok, [{release, {ReleaseName1, ReleaseVer}, _, _}]} =
         file:consult(filename:join([binary_to_list(BinDir), ReleaseName ++ ".rel"])),
@@ -135,13 +148,18 @@ release_name_check(_, _) ->
 
 setup(OldVerPath, NewReleaseName, NewReleaseVer, Release_NewVer) ->
     NewRelPath = filename:join([".", NewReleaseName]),
-    Src = filename:join([NewRelPath, "releases", NewReleaseVer, NewReleaseName ++ ".rel"]),
+    Src = filename:join([NewRelPath, "releases",
+                         NewReleaseVer, NewReleaseName ++ ".rel"]),
     Dst = filename:join([".", Release_NewVer ++ ".rel"]),
     {ok, _} = file:copy(Src, Dst),
-    ok = code:add_pathsa(filelib:wildcard(filename:join([NewRelPath, "*"]))),
-    ok = code:add_pathsa(filelib:wildcard(filename:join([NewRelPath, "lib", "*", "ebin"]))),
-    ok = code:add_pathsa(filelib:wildcard(filename:join([OldVerPath, "lib", "*", "ebin"]))),
-    ok = code:add_pathsa(filelib:wildcard(filename:join([OldVerPath, "releases", "*"]))).
+    ok = code:add_pathsa(
+           filelib:wildcard(filename:join([NewRelPath, "*"]))),
+    ok = code:add_pathsa(
+           filelib:wildcard(filename:join([NewRelPath, "lib", "*", "ebin"]))),
+    ok = code:add_pathsa(
+           filelib:wildcard(filename:join([OldVerPath, "lib", "*", "ebin"]))),
+    ok = code:add_pathsa(
+           filelib:wildcard(filename:join([OldVerPath, "releases", "*"]))).
 
 run_systools(NewReleaseVer, ReleaseName) ->
     Opts = [silent],
@@ -169,5 +187,5 @@ cleanup(Release_NewVer) ->
     ?DEBUG("Removing files needed for building the upgrade~n", []),
     ok = file:delete(filename:join([".", Release_NewVer ++ ".rel"])),
     ok = file:delete(filename:join([".", Release_NewVer ++ ".boot"])),
-    ok = file:delete(filename:join([".", Release_NewVer ++ ".script"),
+    ok = file:delete(filename:join([".", Release_NewVer ++ ".script"])),
     ok = file:delete(filename:join([".", "relup"])).
