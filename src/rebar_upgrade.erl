@@ -139,17 +139,17 @@ run_systools(NewReleaseVer, ReleaseName) ->
     NameList = [ReleaseName],
     case systools:make_relup(NewReleaseVer, NameList, NameList, Opts) of
         {error, _, _Message} ->
-            ?ABORT("~p~n", [_Message]);
+            ?ABORT("systools aborted with: ~p~n", [_Message]);
         _ ->
             ?DEBUG("relup created~n", []),
             case systools:make_script(NewReleaseVer, Opts) of
                 {error, _, _Message1} ->
-                    ?ABORT("~p~n", [_Message1]);
+                    ?ABORT("systools aborted with: ~p~n", [_Message1]);
                 _ ->
                     ?DEBUG("script created~n", []),
                     case systools:make_tar(NewReleaseVer, Opts) of
                         {error, _, _Message2} ->
-                            ?ABORT("~p~n", [_Message2]);
+                            ?ABORT("systools aborted with: ~p~n", [_Message2]);
                         _ ->
                             ?CONSOLE("~p upgrade package created~n", NameList)
                     end
