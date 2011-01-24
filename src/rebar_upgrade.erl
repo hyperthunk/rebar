@@ -66,14 +66,23 @@ run_checks(OldVerPath, ReltoolFile) ->
     {OldReleaseName, OldReleaseVer} =
         get_release_version(ReleaseName, OldVerPath),
 
-    true = release_name_check(NewReleaseName, OldReleaseName,
-                              "new and old .rel release names dont match"),
-    true = release_name_check(ReleaseName, NewReleaseName,
-                              "reltool and .rel release names dont match"),
+    case release_name_check(NewReleaseName, OldReleaseName) of
+        true ->
+            true;
+        false ->
+            ?ABORT("New and old .rel release names do not match")
+    end,
+
+    case release_name_check(ReleaseName, NewReleaseName) of
+        true ->
+            true;
+        false ->
+            ?ABORT("Reltool and .rel release names do not match")
+    end,
 
     case release_version_check(NewReleaseVer, OldReleaseVer) of
         true ->
-            ?ABORT("new and old .rel contain the same version~n", []);
+            ?ABORT("New and old .rel contain the same version~n", []);
         false ->
             true
     end,
@@ -82,7 +91,7 @@ run_checks(OldVerPath, ReltoolFile) ->
         true ->
             true
         false ->
-            ?ABORT("reltool version and .rel versions dont match~n", [])
+            ?ABORT("Reltool and .rel versions do not match~n", [])
     end,
     
     {NewReleaseName, NewReleaseVer}.
@@ -95,7 +104,7 @@ get_release_name(ReltoolFile) ->
             {rel, ReleaseName, ReleaseVersion, _} = proplists:lookup(rel, ConfigList),
             {ReleaseName, ReleaseVersion};
         _ ->
-            ?ABORT("rebar had an issue parsing your reltool.config~n", [])
+            ?ABORT("Rebar had an issue parsing your reltool.config~n", [])
     end.
 
 get_release_version(ReleaseName, Path) ->
@@ -111,7 +120,7 @@ release_path_check(Path) ->
         true ->
             true;
         false ->
-            ?ABORT("release directory doesn't exist (~p)~n", [Path])
+            ?ABORT("Release directory doesn't exist (~p)~n", [Path])
     end.
 
 release_version_check(Version1, Version2) when Version1 == Version2 ->
@@ -119,10 +128,10 @@ release_version_check(Version1, Version2) when Version1 == Version2 ->
 release_version_check(_, _) ->
     false.
 
-release_name_check(Name1, Name2, _) when Name1 == Name2 ->
+release_name_check(Name1, Name2) when Name1 == Name2 ->
     true;
-release_name_check(_, _, Msg) ->
-    ?ABORT("~p~n", [Msg]).
+release_name_check(_, _) ->
+    false.
 
 setup(OldVerPath, NewReleaseName, NewReleaseVer, Release_NewVer) ->
     NewRelPath = filename:join([".", NewReleaseName]),
@@ -139,17 +148,17 @@ run_systools(NewReleaseVer, ReleaseName) ->
     NameList = [ReleaseName],
     case systools:make_relup(NewReleaseVer, NameList, NameList, Opts) of
         {error, _, _Message} ->
-            ?ABORT("systools aborted with: ~p~n", [_Message]);
+            ?ABORT("Systools aborted with: ~p~n", [_Message]);
         _ ->
-            ?DEBUG("relup created~n", []),
+            ?DEBUG("Relup created~n", []),
             case systools:make_script(NewReleaseVer, Opts) of
                 {error, _, _Message1} ->
-                    ?ABORT("systools aborted with: ~p~n", [_Message1]);
+                    ?ABORT("Systools aborted with: ~p~n", [_Message1]);
                 _ ->
-                    ?DEBUG("script created~n", []),
+                    ?DEBUG("Script created~n", []),
                     case systools:make_tar(NewReleaseVer, Opts) of
                         {error, _, _Message2} ->
-                            ?ABORT("systools aborted with: ~p~n", [_Message2]);
+                            ?ABORT("Systools aborted with: ~p~n", [_Message2]);
                         _ ->
                             ?CONSOLE("~p upgrade package created~n", NameList)
                     end
@@ -157,7 +166,7 @@ run_systools(NewReleaseVer, ReleaseName) ->
     end.
 
 cleanup(Release_NewVer) ->
-    ?DEBUG("removing files needed for building the upgrade~n", []),
+    ?DEBUG("Removing files needed for building the upgrade~n", []),
     ok = file:delete(filename:join([".", Release_NewVer ++ ".rel"])),
     ok = file:delete(filename:join([".", Release_NewVer ++ ".boot"])),
     ok = file:delete(filename:join([".", Release_NewVer ++ ".script"),
