@@ -85,10 +85,15 @@ run_checks(OldVerPath, ReltoolFile) ->
 
 get_release_name(ReltoolFile) ->
     %% expect sys to be the first proplist in reltool.config
-    {ok, [{sys, ConfigList}| _]} = file:consult(ReltoolFile),
-    %% expect the first rel in the proplist to be the one you want
-    {rel, ReleaseName, ReleaseVersion, _} = proplists:lookup(rel, ConfigList),
-    {ReleaseName, ReleaseVersion}.
+    case file:consult(ReltoolFile) of
+        {ok, [{sys, ConfigList}| _]} ->
+            %% expect the first rel in the proplist to be the one you want
+            {rel, ReleaseName, ReleaseVersion, _} = proplists:lookup(rel, ConfigList),
+            {ReleaseName, ReleaseVersion};
+        _ ->
+            ?ABORT("rebar had an issue parsing your reltool.config~n", [])
+    end,
+
 
 get_release_version(ReleaseName, Path) ->
     [RelFile] = filelib:wildcard(Path ++ "/releases/*/"
