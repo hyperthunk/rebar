@@ -70,14 +70,14 @@ run_checks(OldVerPath, ReltoolFile) ->
         true ->
             true;
         false ->
-            ?ABORT("New and old .rel release names do not match")
+            ?ABORT("New and old .rel release names do not match~n")
     end,
 
     case release_name_check(ReleaseName, NewReleaseName) of
         true ->
             true;
         false ->
-            ?ABORT("Reltool and .rel release names do not match")
+            ?ABORT("Reltool and .rel release names do not match~n")
     end,
 
     case release_version_check(NewReleaseVer, OldReleaseVer) of
