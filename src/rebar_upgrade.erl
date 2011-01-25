@@ -29,14 +29,14 @@
 
 -include("rebar.hrl").
 
--export([upgrade/2]).
+-export(['generate-upgrade'/2]).
 
 %% public api
 
-upgrade(_Config, ReltoolFile) ->
-    case rebar_config:get_global(oldreleasepath, false) of
+'generate-upgrade'(_Config, ReltoolFile) ->
+    case rebar_config:get_global(previous_release, false) of
         false ->
-            ?ABORT("oldreleasepath=PATH is required to "
+            ?ABORT("previous_release=PATH is required to "
                    "create upgrade package~n", []);
         OldVerPath ->
             %% Run checks to make sure that building a package is possible
