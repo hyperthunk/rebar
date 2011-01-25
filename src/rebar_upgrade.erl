@@ -41,19 +41,19 @@ upgrade(_Config, ReltoolFile) ->
         OldVerPath ->
             %% Run checks to make sure that building a package is possible
             {NewName, NewVer} = run_checks(OldVerPath, ReltoolFile),
-            Name_NewVer = NewName ++ "_" ++ NewVer,
+            NameVer = NewName ++ "_" ++ NewVer,
 
             %% Save the code path prior to doing anything
             OrigPath = code:get_path(),
 
             %% Prepare the environment for building the package
-            ok = setup(OldVerPath, NewName, NewVer, Name_NewVer),
+            ok = setup(OldVerPath, NewName, NewVer, NameVer),
 
             %% Build the package
-            run_systools(Name_NewVer, NewName),
+            run_systools(NameVer, NewName),
 
             %% Clean up files that systools created
-            ok = cleanup(Name_NewVer),
+            ok = cleanup(NameVer),
 
             %% Restore original path
             true = code:set_path(OrigPath),
@@ -66,7 +66,7 @@ upgrade(_Config, ReltoolFile) ->
 run_checks(OldVerPath, ReltoolFile) ->
     true = release_path_check(OldVerPath),
 
-    {Name, Version} = get_release_name(ReltoolFile),
+    {Name, Ver} = get_release_name(ReltoolFile),
     NamePath = filename:join([".", Name]),
     true = release_path_check(NamePath),
 
@@ -94,7 +94,7 @@ run_checks(OldVerPath, ReltoolFile) ->
             ok
     end,
 
-    case release_version_check(Version, NewVer) of
+    case release_version_check(Ver, NewVer) of
         true ->
             true;
         false ->
@@ -108,8 +108,8 @@ get_release_name(ReltoolFile) ->
     case file:consult(ReltoolFile) of
         {ok, [{sys, Config}| _]} ->
             %% expect the first rel in the proplist to be the one you want
-            {rel, Name, Version, _} = proplists:lookup(rel, Config),
-            {Name, Version};
+            {rel, Name, Ver, _} = proplists:lookup(rel, Config),
+            {Name, Ver};
         _ ->
             ?ABORT("Failed to parse ~s~n", [ReltoolFile])
     end.
@@ -131,7 +131,7 @@ release_path_check(Path) ->
             ?ABORT("Release directory doesn't exist (~p)~n", [Path])
     end.
 
-release_version_check(Version1, Version2) when Version1 == Version2 ->
+release_version_check(Ver1, Ver2) when Ver1 == Ver2 ->
     true;
 release_version_check(_, _) ->
     false.
@@ -141,11 +141,11 @@ release_name_check(Name1, Name2) when Name1 == Name2 ->
 release_name_check(_, _) ->
     false.
 
-setup(OldVerPath, NewName, NewVer, Name_NewVer) ->
+setup(OldVerPath, NewName, NewVer, NameVer) ->
     NewRelPath = filename:join([".", NewName]),
     Src = filename:join([NewRelPath, "releases",
                          NewVer, NewName ++ ".rel"]),
-    Dst = filename:join([".", Name_NewVer ++ ".rel"]),
+    Dst = filename:join([".", NameVer ++ ".rel"]),
     {ok, _} = file:copy(Src, Dst),
     ok = code:add_pathsa(
            filelib:wildcard(filename:join([NewRelPath, "*"]))),
@@ -178,9 +178,9 @@ run_systools(NewVer, Name) ->
             end
     end.
 
-cleanup(Name_NewVer) ->
+cleanup(NameVer) ->
     ?DEBUG("Removing files needed for building the upgrade~n", []),
-    ok = file:delete(filename:join([".", Name_NewVer ++ ".rel"])),
-    ok = file:delete(filename:join([".", Name_NewVer ++ ".boot"])),
-    ok = file:delete(filename:join([".", Name_NewVer ++ ".script"])),
+    ok = file:delete(filename:join([".", NameVer ++ ".rel"])),
+    ok = file:delete(filename:join([".", NameVer ++ ".boot"])),
+    ok = file:delete(filename:join([".", NameVer ++ ".script"])),
     ok = file:delete(filename:join([".", "relup"])).
