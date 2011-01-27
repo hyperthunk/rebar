@@ -31,7 +31,6 @@
          get_arch/0,
          get_temp_dir/0,
          get_temp_filename/0,
-         remove_dir/1,
          is_outside_base_dir/1,
          sh/2,
          find_files/2,
@@ -78,14 +77,6 @@ get_temp_dir() ->
 get_temp_filename() ->
     filename:join(get_temp_dir(), 
         io_lib:format("~p", [erlang:phash2(make_ref())])).
-
-remove_dir(Dir) ->    
-    case os:type() of
-        {win32, _} ->
-            os:cmd("rmdir /S /Q " ++ filename:nativename(Dir));
-        _ ->
-            os:cmd("rm -rf " ++ Dir ++ " 2>/dev/null")
-    end.
 
 is_outside_base_dir(Path) ->
     BaseDir = rebar_config:get_global(base_dir, []),

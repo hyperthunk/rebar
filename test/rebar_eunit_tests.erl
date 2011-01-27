@@ -240,7 +240,7 @@ setup_project_with_external_deps() ->
 
 teardown_project_with_external_deps(_) ->
     [DepsDir] = get_test_deps_dir(),
-    rebar_utils:remove_dir(DepsDir),
+    rebar_file_utils:rm_rf(DepsDir),
     teardown(arg_for_eunit).
 
 teardown(_) ->
