@@ -1,0 +1,2 @@
+{variables, [{sut, "mymodule"}]}.
+{template, "ctsuite.erl", "test/{{sut}}_SUITE.erl"}.
