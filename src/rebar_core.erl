@@ -295,47 +295,42 @@ select_modules([Module | Rest], Command, Acc) ->
 run_modules([], _Command, _Config, _File) ->
     ok;
 run_modules([Module | Rest], Command, Config, File) ->
-    process_hooks(pre, Config, Command, Module),
+    process_hooks(before_hooks, Config, Command, Module),
     Result = case Module:Command(Config, File) of
                  ok ->
                      run_modules(Rest, Command, Config, File);
                  {error, _} = Error ->
                      {Module, Error}
              end,
-    process_hooks(post, Config, Command, Module),
+    process_hooks(after_hooks, Config, Command, Module),
     Result.
 
-process_hooks(pre, Config, Command, Module) ->
-    apply_hooks(Config, {pre, Command},
-                list_to_atom("pre_" ++ atom_to_list(Command)), Module);
-process_hooks(post, Config, Command, Module) ->
-    apply_hooks(Config, {post, Command},
-                list_to_atom("post_" ++ atom_to_list(Command)), Module).
+process_hooks(Hook, Config, Command, Module) ->
+    {ok, Goals} = application:get_env(rebar, goals),
+    Goal = proplists:get_value(Module, Goals),
+    Hooks = rebar_config:get_local(Config, Hook, []),
+    apply_hooks(Config, Hook, Command, Goal, Module, Hooks).
 
-apply_hooks(Config, {Mode, GivenCommand}, ConfigKey, Module) ->
-    ModuleKey = list_to_atom(re:replace(atom_to_list(Module),
-                                        "rebar_", "", [{return, list}])),
-    case rebar_config:get_local(Config, ConfigKey, undefined) of
-        undefined ->
+apply_hooks(Config, Hook, Command, Goal, Module, 
+        [{Command, GivenCommand}|Rest]) ->
+    %% we apply this hook only once, for the current command
+    case erlang:get({Hook, rebar_utils:get_cwd(), Command}) of
+        true ->
             skip;
-        [] ->
-            skip;
-        [{_,_}|_]=PropList ->
-            case proplists:get_value(ModuleKey, PropList, undefined) of
-                undefined ->
-                    skip;
-                Cmd ->
-                    apply_hooks(Config, Cmd, Module)
-            end;
-        Command ->
-            case erlang:get({Mode, GivenCommand}) of
-                true ->
-                    skip;
-                _ ->
-                    apply_hooks(Config, Command, Module),
-                    erlang:put({Mode, GivenCommand}, true)
-            end
-    end.
+        _ ->
+            apply_hooks(Config, GivenCommand, Module),
+            erlang:put({Hook, rebar_utils:get_cwd(), Command}, true)
+    end,
+    apply_hooks(Config, Hook, Command, Goal, Module, Rest);
+apply_hooks(Config, Hook, Command, Goal, Module,
+        [{Command, Goal, GivenCommand}|Rest]) ->
+    %% we apply this hook to the current goal - goals only run once!
+    apply_hooks(Config, GivenCommand, Module),
+    apply_hooks(Config, Hook, Command, Goal, Module, Rest);
+apply_hooks(Config, Hook, Command, Goal, Module, [_|Rest]) ->
+    apply_hooks(Config, Hook, Command, Goal, Module, Rest);
+apply_hooks(_, _, _, _, _, []) ->
+    done.
 
 apply_hooks(Config, Command, Module) ->
     Env = check_for_env(Config, Module),

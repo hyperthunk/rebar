@@ -85,6 +85,21 @@
                                rebar_reltool,
                                rebar_upgrade
                               ]}
-                   ]}
+                   ]},
+         {goals, [
+                 {rebar_abnfc_compiler, abnfc},
+                 {rebar_protobuffs_compiler, protobuffs},
+                 {rebar_neotoma_compiler, neotoma},
+                 {rebar_asn1_compiler, asn1},
+                 {rebar_erlc_compiler, erlc},
+                 {rebar_lfe_compiler, lfe},
+                 {rebar_erlydtl_compiler, erlydtl},
+                 {rebar_port_compiler, port},
+                 {rebar_ct, ct},
+                 {rebar_eunit, eunit},
+                 {rebar_dialyzer, dialyze},
+                 {rebar_edoc, edoc},
+                 {rebar_xref, xref}
+                 ]}
         ]}
 ]}.
