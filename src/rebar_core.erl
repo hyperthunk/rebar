@@ -372,13 +372,46 @@ ulist([H | T], Acc) ->
 
 plugin_modules(_Config, []) ->
     {ok, []};
-plugin_modules(_Config, Modules) ->
+plugin_modules(Config, Modules) ->
     FoundModules = [M || M <- Modules, code:which(M) =/= non_existing],
-    case (Modules =:= FoundModules) of
-        true ->
-            ok;
-        false ->
-            ?WARN("Missing plugins: ~p\n", [Modules -- FoundModules]),
-            ok
+    plugin_modules(Config, FoundModules, Modules -- FoundModules).
+
+plugin_modules(_Config, FoundModules, []) ->
+    {ok, FoundModules};
+plugin_modules(Config, FoundModules, MissingModules) ->
+    {Loaded, NotLoaded} = load_plugin_modules(Config, MissingModules),
+    AllViablePlugins = FoundModules ++ [ M || {_,M} <- Loaded ],
+    case NotLoaded of
+        [] ->
+            {ok, AllViablePlugins};
+        Items when is_list(Items) ->
+            %% NB: we continue to ignore this situation, as did the original code
+            ?WARN("Missing plugins: ~p\n", Items),
+            {ok, AllViablePlugins}
+    end.
+
+load_plugin_modules(Config, Modules) ->
+    PluginDir = case rebar_config:get_local(Config, plugin_dir, undefined) of
+        undefined ->
+            filename:join(rebar_utils:get_cwd(), "plugins");
+        Dir ->
+            Dir
     end,
-    {ok, FoundModules}.
+    PluginSources = rebar_utils:find_files(PluginDir, ".*\.erl\$"),
+    PluginMods = lists:map(fun plugin_module_name/1, PluginSources),
+    AvailablePlugins = lists:zip(PluginMods, PluginSources),
+    lists:partition(fun ({module, _}) -> true; (_) -> false end,
+        [ load_plugin(Mod, Src) || {Mod, Src} <- AvailablePlugins, 
+                                   lists:member(Mod, Modules) ]).
+
+load_plugin(Mod, Src) ->
+    case compile:file(Src, [binary,return_errors]) of
+        {ok, Mod, Bin} ->
+            code:load_binary(Mod, Src, Bin);
+        {error, ErrorList, _WarningList} ->
+            ?ERROR("Plugin ~p contains compilation errors: ~p~n", [Mod, ErrorList]),
+            Mod
+    end.
+
+plugin_module_name(File) ->
+    list_to_atom(filename:basename(File, ".erl")).
