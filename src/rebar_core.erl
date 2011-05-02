@@ -381,14 +381,14 @@ plugin_modules(_Config, FoundModules, []) ->
 plugin_modules(Config, FoundModules, MissingModules) ->
     {Loaded, NotLoaded} = load_plugin_modules(Config, MissingModules),
     AllViablePlugins = FoundModules ++ [ M || {_,M} <- Loaded ],
-    case NotLoaded of
-        [] ->
-            {ok, AllViablePlugins};
-        Items when is_list(Items) ->
+    case length(NotLoaded) > 0 of
+        true ->
             %% NB: we continue to ignore this situation, as did the original code
-            ?WARN("Missing plugins: ~p\n", Items),
-            {ok, AllViablePlugins}
-    end.
+            ?WARN("Missing plugins: ~p\n", NotLoaded);
+        false ->
+            ok
+    end,
+    {ok, AllViablePlugins}.
 
 load_plugin_modules(Config, Modules) ->
     PluginDir = case rebar_config:get_local(Config, plugin_dir, undefined) of
@@ -401,7 +401,7 @@ load_plugin_modules(Config, Modules) ->
     PluginMods = lists:map(fun plugin_module_name/1, PluginSources),
     AvailablePlugins = lists:zip(PluginMods, PluginSources),
     lists:partition(fun ({module, _}) -> true; (_) -> false end,
-        [ load_plugin(Mod, Src) || {Mod, Src} <- AvailablePlugins, 
+        [ load_plugin(Mod, Src) || {Mod, Src} <- AvailablePlugins,
                                    lists:member(Mod, Modules) ]).
 
 load_plugin(Mod, Src) ->
