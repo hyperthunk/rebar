@@ -11,6 +11,14 @@ configuration work. rebar also provides dependency management, enabling
 application writers to easily re-use common libraries from a variety of  
 locations (git, hg, etc).
 
+Hyperthunk's enhancements (pending inclusion to basho/rebar)
+--------
+
+1. Plugins can be loaded dynamically from source, instead of having to be compiled.
+2. Source based Plugins (1) can be loaded from a specific folder `plugin_dir`
+3. Plugins can run before (`pre_` prefix) or after (`post_` prefix) any command
+4. No destructive commands run in deps folders, unless you specifically ask for them 
+
 Building
 --------
 
