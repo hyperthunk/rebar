@@ -65,8 +65,13 @@ new(#config{}=ParentConfig)->
     %% We can be certain that we are at the top level if we don't have any
     %% configs yet since if we are at another level we must have some config.
     ConfName = case ParentConfig of
-                   {config, _, []} ->
-                       rebar_config:get_global(config, "rebar.config");
+                   {config, Path, _} ->
+                       case is_base_dir(Path) of
+                           true ->
+                               rebar_config:get_global(config, "rebar.config");
+                           false ->
+                               "rebar.config"
+                       end;
                    _ ->
                        "rebar.config"
                end,
@@ -92,6 +97,9 @@ new(#config{}=ParentConfig)->
            end,
 
     #config { dir = Dir, opts = Opts }.
+
+is_base_dir(Dir) ->
+    Dir == rebar_config:get_global(base_dir, []).
 
 get(Config, Key, Default) ->
     proplists:get_value(Key, Config#config.opts, Default).
