@@ -86,28 +86,37 @@
 %%               {port_envs, [{"x86_64.*-linux", "CFLAGS",
 %%                             "$CFLAGS -X86Options"}]}
 %%
-%% * port_pre_script - Tuple which specifies a pre-compilation script to run,
-%%                     and a filename that exists as a result of the script
-%%                     running.
-%%
-%% * port_cleanup_script - String that specifies a script to run during cleanup.
-%%                         Use this to remove files/directories created by
-%%                         port_pre_script.
-%%
-
 compile(Config, AppFile) ->
+    %% Allow the user to specify that depedant files get built first
+    FirstFiles = expand_sources(rebar_config:get(Config, port_first_files, []), []),
+
     %% Compose list of sources from config file -- defaults to c_src/*.c
     Sources = expand_sources(rebar_config:get_list(Config, port_sources,
                                                    ["c_src/*.c"]), []),
+    Env = setup_env(Config),
+
+    {FFNewBins, FFExistingBins} = case FirstFiles of
+                                      [_|_] ->
+                                          compile_each(FirstFiles, Config,
+                                                       Env, [], []);
+                                      _ ->
+                                          {[], []}
+                                  end,
     case Sources of
         [] ->
             ok;
         _ ->
-            Env = setup_env(Config),
+
+            %% Remove first files from found files
+            RestFiles = [Source || Source <- Sources,
+                                   not lists:member(Source, FirstFiles)],
 
             %% Compile each of the sources
-            {NewBins, ExistingBins} = compile_each(Sources, Config, Env,
-                                                   [], []),
+            {SNewBins, SExistingBins} = compile_each(RestFiles, Config, Env,
+                                                     [], []),
+
+            NewBins = FFNewBins ++ SNewBins,
+            ExistingBins = FFExistingBins ++ SExistingBins,
 
             %% Construct the driver name and make sure priv/ exists
             SoSpecs = so_specs(Config, AppFile, NewBins ++ ExistingBins),
