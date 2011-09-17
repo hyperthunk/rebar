@@ -102,7 +102,7 @@ process_dir(Dir, ParentConfig, Command, DirSet) ->
         true ->
             ?DEBUG("Entering ~s\n", [Dir]),
             ok = file:set_cwd(Dir),
-            Config = rebar_config:new(ParentConfig),
+            Config = config_for_dir(Dir, ParentConfig),
 
             %% Save the current code path and then update it with
             %% lib_dirs. Children inherit parents code path, but we
@@ -184,7 +184,16 @@ process_dir(Dir, ParentConfig, Command, DirSet) ->
             DirSet4
     end.
 
+config_for_dir(Dir, ParentConfig) ->
+    case requires_new_config(Dir) of
+        true ->
+            rebar_config:new(ParentConfig);
+        false ->
+            ParentConfig
+    end.
 
+requires_new_config(Dir) ->
+    Dir =/= rebar_config:get_global(base_dir,undefined).
 
 %%
 %% Given a list of directories and a set of previously processed directories,

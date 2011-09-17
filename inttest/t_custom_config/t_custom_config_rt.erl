@@ -15,7 +15,13 @@ run(Dir) ->
         retest:sh_expect(Ref,
                          "DEBUG: Consult config file .*/custom.config.*",
                          [{capture, all, list}]),
+    {ok, Missing} =
+        retest:sh_expect(Ref,
+                     "DEBUG: Missing deps  : \\[\\{dep,bad_name,"
+                     "boo,\"\\.\",undefined\\}\\]",
+                     [{capture, all, list}]),
     retest_log:log(debug, "[CAPTURED]: ~s~n", [Captured]),
+    retest_log:log(debug, "[Missing]: ~s~n", [Missing]),
     ok.
 
 %%
