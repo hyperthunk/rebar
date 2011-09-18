@@ -94,7 +94,9 @@ process_commands([Command | Rest], ParentConfig) ->
         _ ->
             ok
     end,
-    PreviousCommands = rebar:config:get_global(previous_commands, []),
+
+    PreviousCommands = rebar_config:get_global(previous_commands, []),
+
     rebar_config:set_global(previous_commands, [Command|PreviousCommands]),
     process_commands(Rest, ParentConfig).
 
