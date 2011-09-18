@@ -125,9 +125,14 @@ process_dir(Dir, ParentConfig, Command, DirSet) ->
 
             Modules = AnyDirModules ++ DirModules,
 
+            %% Get the list of plug-in modules from rebar.config. These
+            %% modules may participate in preprocess and postprocess.
+            {ok, PluginModules} = plugin_modules(Config),
+
             %% Invoke 'preprocess' on the modules -- this yields a list of other
             %% directories that should be processed _before_ the current one.
-            Predirs = acc_modules(Modules, preprocess, Config, ModuleSetFile),
+            Predirs = acc_modules(PluginModules ++ Modules, preprocess,
+                                  Config, ModuleSetFile),
             ?DEBUG("Predirs: ~p\n", [Predirs]),
             DirSet2 = process_each(Predirs, Command, Config,
                                    ModuleSetFile, DirSet),
@@ -144,11 +149,6 @@ process_dir(Dir, ParentConfig, Command, DirSet) ->
                     ?INFO("Skipping ~s in ~s\n", [Command, Dir]);
 
                 false ->
-                    %% Get the list of plug-in modules from rebar.config. These
-                    %% modules are processed LAST and do not participate
-                    %% in preprocess.
-                    {ok, PluginModules} = plugin_modules(Config),
-
                     %% Execute any before_command plugins on this directory
                     execute_pre(Command, PluginModules,
                                 Config, ModuleSetFile),
@@ -167,7 +167,8 @@ process_dir(Dir, ParentConfig, Command, DirSet) ->
 
             %% Invoke 'postprocess' on the modules. This yields a list of other
             %% directories that should be processed _after_ the current one.
-            Postdirs = acc_modules(Modules, postprocess, Config, ModuleSetFile),
+            Postdirs = acc_modules(PluginModules ++ Modules, postprocess,
+                                   Config, ModuleSetFile),
             ?DEBUG("Postdirs: ~p\n", [Postdirs]),
             DirSet4 = process_each(Postdirs, Command, Config,
                                    ModuleSetFile, DirSet3),
