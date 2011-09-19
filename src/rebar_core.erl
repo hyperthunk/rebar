@@ -137,9 +137,13 @@ process_dir(Dir, ParentConfig, Command, DirSet) ->
             %% modules may participate in preprocess and postprocess.
             {ok, PluginModules} = plugin_modules(Config),
 
+            %% We want any_dir_modules such as rebar_deps to run first however
+            PreAndPostProcessModules = AnyDirModules ++ PluginModules ++ 
+                                       DirModules,
+
             %% Invoke 'preprocess' on the modules -- this yields a list of other
             %% directories that should be processed _before_ the current one.
-            Predirs = acc_modules(PluginModules ++ Modules, preprocess,
+            Predirs = acc_modules(PreAndPostProcessModules, preprocess,
                                   Config, ModuleSetFile),
             ?DEBUG("Predirs: ~p\n", [Predirs]),
             DirSet2 = process_each(Predirs, Command, Config,
@@ -175,7 +179,7 @@ process_dir(Dir, ParentConfig, Command, DirSet) ->
 
             %% Invoke 'postprocess' on the modules. This yields a list of other
             %% directories that should be processed _after_ the current one.
-            Postdirs = acc_modules(PluginModules ++ Modules, postprocess,
+            Postdirs = acc_modules(PreAndPostProcessModules, postprocess,
                                    Config, ModuleSetFile),
             ?DEBUG("Postdirs: ~p\n", [Postdirs]),
             DirSet4 = process_each(Postdirs, Command, Config,
