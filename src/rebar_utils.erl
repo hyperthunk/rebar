@@ -26,8 +26,7 @@
 %% -------------------------------------------------------------------
 -module(rebar_utils).
 
--export([command_info/1,
-         get_cwd/0,
+-export([get_cwd/0,
          is_arch/1,
          get_arch/0,
          wordsize/0,
@@ -51,17 +50,6 @@
 %% ====================================================================
 %% Public API
 %% ====================================================================
-
-command_info(current) ->
-    rebar_config:get_global(current_command, undefined);
-command_info(remaining) ->
-    rebar_config:get_global(remaining_commands, undefined);
-command_info(previous) ->
-    rebar_config:get_global(previous_commands, undefined);
-command_info(issued) ->
-    rebar_config:get_global(issued_commands, undefined);
-command_info(_) ->
-    undefined.
 
 get_cwd() ->
     {ok, Dir} = file:get_cwd(),

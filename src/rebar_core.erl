@@ -63,7 +63,11 @@ skip_dirs() ->
 %% Internal functions
 %% ===================================================================
 
-process_commands([], _ParentConfig) ->
+process_commands(Commands, Config) ->
+    rebar_commands:initialize(Commands),
+    process_command(rebar_commands:dequeue(), Config).
+
+process_command(eoi, _) ->
     case erlang:get(operations) of
         0 ->
             %% none of the commands had an effect
@@ -71,14 +75,10 @@ process_commands([], _ParentConfig) ->
         _ ->
             ok
     end;
-process_commands([Command | Rest], ParentConfig) ->
+process_command(Command, ParentConfig) ->
     %% Reset skip dirs
     lists:foreach(fun (D) -> erlang:erase({skip_dir, D}) end, skip_dirs()),
     Operations = erlang:get(operations),
-
-    %% Publish the current command and remaining pipeline in our config
-    rebar_config:set_global(current_command, Command),
-    rebar_config:set_global(remaining_commands, Rest),
 
     %% Convert the code path so that all the entries are absolute paths.
     %% If not, code:set_path() may choke on invalid relative paths when trying
@@ -94,9 +94,8 @@ process_commands([Command | Rest], ParentConfig) ->
         _ ->
             ok
     end,
-    PreviousCommands = rebar_config:get_global(previous_commands, []),
-    rebar_config:set_global(previous_commands, [Command|PreviousCommands]),
-    process_commands(Rest, ParentConfig).
+    rebar_config:add_global(processed_commands, Command),
+    process_command(rebar_commands:dequeue(), ParentConfig).
 
 
 process_dir(Dir, ParentConfig, Command, DirSet) ->

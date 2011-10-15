@@ -29,7 +29,7 @@
 -export([new/0, new/1, base_config/1,
          get/3, get_local/3, get_list/3,
          get_all/2,
-         set/3,
+         set/3, add_global/2,
          set_global/2, get_global/2,
          is_verbose/0, get_jobs/0]).
 
@@ -112,6 +112,10 @@ set_global(jobs=Key, Value) when is_integer(Value) ->
     application:set_env(rebar_global, Key, erlang:max(1,Value));
 set_global(Key, Value) ->
     application:set_env(rebar_global, Key, Value).
+
+add_global(Key, Value) ->
+    Previous = rebar_config:get_global(Key, []),
+    rebar_config:set_global(Key, [Value|Previous]).
 
 get_global(Key, Default) ->
     case application:get_env(rebar_global, Key) of

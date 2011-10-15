@@ -11,6 +11,7 @@
               rebar_base_compiler,
               rebar_config,
               rebar_core,
+              rebar_commands,
               rebar_cleaner,
               rebar_ct,
               rebar_deps,
