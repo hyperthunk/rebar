@@ -29,8 +29,7 @@
 -export([compile/2,
          clean/2]).
 
--export([doterl_compile/2,
-         doterl_compile/3]).
+-export([test_compile/1]).
 
 -include("rebar.hrl").
 
@@ -112,8 +111,67 @@ clean(_Config, _AppFile) ->
 
 
 %% ===================================================================
-%% .erl Compilation API (externally used by only eunit)
+%% .erl Compilation API (externally used by only eunit and qc)
 %% ===================================================================
+
+-spec test_compile(Config::rebar_config:config()) -> 'ok'.
+
+test_compile(Config) ->
+    %% Obtain all the test modules for inclusion in the compile stage.
+    %% Notice: this could also be achieved with the following
+    %% rebar.config option: {qc_compile_opts, [{src_dirs, ["test"]}]}
+    TestErls = rebar_utils:find_files("test", ".*\\.erl\$"),
+
+    %% Compile erlang code to ?QC_DIR, using a tweaked config
+    %% with appropriate defines, and include all the test modules
+    %% as well.
+    doterl_compile(test_compile_config(Config),
+                   ?TEST_DIR, TestErls).
+
+%% ===================================================================
+%% Internal functions
+%% ===================================================================
+
+test_compile_config(Config) ->
+    EqcOpts = eqc_opts(),
+    PropErOpts = proper_opts(),
+
+    ErlOpts = rebar_config:get_list(Config, erl_opts, []),
+    EunitOpts = rebar_config:get_list(Config, eunit_compile_opts, []),
+    Opts0 = [{d, 'TEST'}] ++
+        ErlOpts ++ EunitOpts ++ EqcOpts ++ PropErOpts,
+    Opts = [O || O <- Opts0, O =/= no_debug_info],
+    Config1 = rebar_config:set(Config, erl_opts, Opts),
+
+    FirstErls = rebar_config:get_list(Config1, eunit_first_files, []),
+    rebar_config:set(Config1, erl_first_files, FirstErls).
+
+eqc_opts() ->
+    define_if('EQC', is_lib_avail(is_eqc_avail, eqc,
+                                  "eqc.hrl", "QuickCheck")).
+
+proper_opts() ->
+    define_if('PROPER', is_lib_avail(is_proper_avail, proper,
+                                     "proper.hrl", "PropEr")).
+
+define_if(Def, true) -> [{d, Def}];
+define_if(_Def, false) -> [].
+
+is_lib_avail(DictKey, Mod, Hrl, Name) ->
+    case erlang:get(DictKey) of
+        undefined ->
+            IsAvail = case code:lib_dir(Mod, include) of
+                          {error, bad_name} ->
+                              false;
+                          Dir ->
+                              filelib:is_regular(filename:join(Dir, Hrl))
+                      end,
+            erlang:put(DictKey, IsAvail),
+            ?DEBUG("~s availability: ~p\n", [Name, IsAvail]),
+            IsAvail;
+        IsAvail ->
+            IsAvail
+    end.
 
 -spec doterl_compile(Config::rebar_config:config(),
                      OutDir::file:filename()) -> 'ok'.

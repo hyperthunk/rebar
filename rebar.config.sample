@@ -89,6 +89,11 @@
 %% Option to pass extra parameters when launching Common Test
 {ct_extra_params, "-boot start_sasl -s myapp"}.
 
+%% == QuickCheck ==
+
+%% If qc_lib is unspecified rebar tries to detect PropEr or EQC
+{qc_opts, [{qc_lib, atom()}, Options]}.
+
 %% == Cleanup ==
 
 %% Which files to cleanup

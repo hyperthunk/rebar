@@ -13,3 +13,5 @@
 
 -define(DEPRECATED(Key, Old, New, Opts, When),
         rebar_utils:deprecated(Key, Old, New, Opts, When)).
+
+-define(TEST_DIR, ".test").

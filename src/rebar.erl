@@ -264,6 +264,8 @@ generate-appups   previous_release=path Generate appup files
 eunit       [suite=foo]              Run eunit [test/foo_tests.erl] tests
 ct          [suite=] [case=]         Run common_test suites in ./test
 
+qc                                   Test QuichCheck properties
+
 xref                                 Run cross reference analysis
 
 help                                 Show the program options
@@ -315,7 +317,7 @@ command_names() ->
     ["check-deps", "clean", "compile", "create", "create-app", "create-node",
      "ct", "delete-deps", "doc", "eunit", "generate", "generate-appups",
      "generate-upgrade", "get-deps", "help", "list-deps", "list-templates",
-     "update-deps", "overlay", "version", "xref"].
+     "qc", "update-deps", "overlay", "version", "xref"].
 
 unabbreviate_command_names([]) ->
     [];

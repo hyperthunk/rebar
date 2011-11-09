@@ -26,6 +26,7 @@
               rebar_otp_app,
               rebar_port_compiler,
               rebar_protobuffs_compiler,
+              rebar_qc,
               rebar_neotoma_compiler,
               rebar_rel_utils,
               rebar_reltool,
@@ -71,6 +72,7 @@
                                rebar_otp_app,
                                rebar_ct,
                                rebar_eunit,
+                               rebar_qc,
                                rebar_escripter,
                                rebar_edoc,
                                rebar_xref
