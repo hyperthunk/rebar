@@ -46,7 +46,7 @@
 %% ===================================================================
 
 ct(Config, File) ->
-	TestDir = rebar_config:get_local(Config, ct_dir, "test"),
+    TestDir = rebar_config:get_local(Config, ct_dir, "test"),
     case rebar_config:get_global(app, undefined) of
         undefined ->
             %% No app parameter specified, run everything..

@@ -283,7 +283,7 @@ require_source_engine(Source) ->
     ok.
 
 is_app_available(App, VsnRegex, Path) ->
-    ?DEBUG("is_app_available, looking for App ~p  with Path ~p~n", [App, Path]),
+    ?DEBUG("is_app_available, looking for App ~p with Path ~p~n", [App, Path]),
     case rebar_app_utils:is_app_dir(Path) of
         {true, AppFile} ->
             case rebar_app_utils:app_name(AppFile) of
@@ -352,9 +352,9 @@ download_source(AppDir, {hg, Url, Rev}) ->
                    [{cd, filename:dirname(AppDir)}]),
     rebar_utils:sh(?FMT("hg update ~s", [Rev]), [{cd, AppDir}]);
 download_source(AppDir, {git, Url}) ->
-    download_source(AppDir, {git, Url, "HEAD"});
+    download_source(AppDir, {git, Url, {branch, "HEAD"}});
 download_source(AppDir, {git, Url, ""}) ->
-    download_source(AppDir, {git, Url, "HEAD"});
+    download_source(AppDir, {git, Url, {branch, "HEAD"}});
 download_source(AppDir, {git, Url, {branch, Branch}}) ->
     ok = filelib:ensure_dir(AppDir),
     rebar_utils:sh(?FMT("git clone -n ~s ~s", [Url, filename:basename(AppDir)]),
@@ -400,9 +400,9 @@ update_source(Dep) ->
     end.
 
 update_source(AppDir, {git, Url}) ->
-    update_source(AppDir, {git, Url, "HEAD"});
+    update_source(AppDir, {git, Url, {branch, "HEAD"}});
 update_source(AppDir, {git, Url, ""}) ->
-    update_source(AppDir, {git, Url, "HEAD"});
+    update_source(AppDir, {git, Url, {branch, "HEAD"}});
 update_source(AppDir, {git, _Url, {branch, Branch}}) ->
     ShOpts = [{cd, AppDir}],
     rebar_utils:sh("git fetch origin", ShOpts),

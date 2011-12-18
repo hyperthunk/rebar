@@ -180,7 +180,7 @@ parse_args(Args) ->
             unabbreviate_command_names(filter_flags(NonOptArgs, []));
 
         {error, {Reason, Data}} ->
-            ?ERROR("Error: ~s ~p~n~n", [Reason, Data]),
+            ?ERROR("~s ~p~n~n", [Reason, Data]),
             help(),
             halt(1)
     end.
@@ -259,7 +259,7 @@ overlay                              Run reltool overlays only
 
 generate-upgrade  previous_release=path  Build an upgrade package
 
-generate-appups   previous_release=path Generate appup files
+generate-appups   previous_release=path  Generate appup files
 
 eunit       [suite=foo]              Run eunit [test/foo_tests.erl] tests
 ct          [suite=] [case=]         Run common_test suites in ./test

@@ -10,8 +10,11 @@
 -define(ERROR(Str, Args), rebar_log:log(error, Str, Args)).
 
 -define(FMT(Str, Args), lists:flatten(io_lib:format(Str, Args))).
+<<<<<<< HEAD
 
 -define(DEPRECATED(Key, Old, New, Opts, When),
         rebar_utils:deprecated(Key, Old, New, Opts, When)).
 
 -define(TEST_DIR, ".test").
+=======
+>>>>>>> master

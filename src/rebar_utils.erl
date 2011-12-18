@@ -43,7 +43,7 @@
          find_executable/1,
          prop_check/3,
          expand_code_path/0,
-         deprecated/5,
+         deprecated/4,
          expand_env_variable/3,
          test_dir/0, ebin_dir/0]).
 
@@ -67,7 +67,6 @@ command_info(_) ->
 get_cwd() ->
     {ok, Dir} = file:get_cwd(),
     Dir.
-
 
 is_arch(ArchRegex) ->
     case re:run(get_arch(), ArchRegex, [{capture, none}]) of
@@ -218,7 +217,6 @@ test_dir() ->
 ebin_dir() ->
     filename:join(rebar_utils:get_cwd(), "ebin").
 
-
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
@@ -307,12 +305,15 @@ emulate_escript_foldl(Fun, Acc, File) ->
 deprecated(Key, Old, New, Opts, When) ->
     case lists:member(Old, Opts) of
         true ->
-            io:format(
-              <<"WARNING: deprecated ~p option used~n"
-                "Option '~p' has been deprecated~n"
-                "in favor of '~p'.~n"
-                "'~p' will be removed ~s.~n~n">>,
-              [Key, Old, New, Old, When]);
+            deprecated(Key, Old, New, When);
         false ->
             ok
     end.
+
+deprecated(Key, Old, New, When) ->
+    io:format(
+      <<"WARNING: deprecated ~p option used~n"
+        "Option '~p' has been deprecated~n"
+        "in favor of '~p'.~n"
+        "'~p' will be removed ~s.~n~n">>,
+      [Key, Old, New, Old, When]).
