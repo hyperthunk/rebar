@@ -57,8 +57,6 @@
 
 -include("rebar.hrl").
 
--define(EUNIT_DIR, ".eunit").
-
 %% ===================================================================
 %% Public API
 %% ===================================================================
@@ -145,7 +143,7 @@ clean(_Config, _File) ->
 %% ===================================================================
 
 eunit_dir() ->
-    filename:join(rebar_utils:get_cwd(), ?EUNIT_DIR).
+    filename:join(rebar_utils:get_cwd(), ?TEST_DIR).
 
 ebin_dir() ->
     filename:join(rebar_utils:get_cwd(), "ebin").
