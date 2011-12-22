@@ -57,6 +57,8 @@
 
 -include("rebar.hrl").
 
+-define(EUNIT_DIR, ".eunit").
+
 %% ===================================================================
 %% Public API
 %% ===================================================================
@@ -141,6 +143,12 @@ clean(_Config, _File) ->
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
+
+eunit_dir() ->
+    filename:join(rebar_utils:get_cwd(), ?EUNIT_DIR).
+
+ebin_dir() ->
+    filename:join(rebar_utils:get_cwd(), "ebin").
 
 perform_eunit(Config, Modules) ->
     %% suite defined, so only specify the module that relates to the
