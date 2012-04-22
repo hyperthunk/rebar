@@ -29,6 +29,7 @@
 -export([compile/2,
          clean/2]).
 
+%% for internal use by only eunit
 -export([doterl_compile/2,
          doterl_compile/3]).
 

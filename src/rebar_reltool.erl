@@ -81,6 +81,8 @@ clean(Config, ReltoolFile) ->
 %% ===================================================================
 
 check_vsn() ->
+    %% TODO: use application:load and application:get_key once we require
+    %%       R14A or newer. There's no reltool.app before R14A.
     case code:lib_dir(reltool) of
         {error, bad_name} ->
             ?ABORT("Reltool support requires the reltool application "

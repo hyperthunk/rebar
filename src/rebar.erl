@@ -95,7 +95,10 @@ run_aux(["version"]) ->
     ok;
 run_aux(Commands) ->
     %% Make sure crypto is running
-    ok = crypto:start(),
+    case crypto:start() of
+        ok -> ok;
+        {error,{already_started,crypto}} -> ok
+    end,
 
     %% Initialize logging system
     rebar_log:init(),
@@ -341,7 +344,8 @@ command_names() ->
     ["check-deps", "clean", "compile", "create", "create-app", "create-node",
      "ct", "delete-deps", "doc", "eunit", "generate", "generate-appups",
      "generate-upgrade", "get-deps", "help", "list-deps", "list-templates",
-     "update-deps", "overlay", "version", "xref"].
+     "update-deps", "overlay", "shell", "version", "xref"].
+
 
 unabbreviate_command_names([]) ->
     [];

@@ -30,6 +30,7 @@
               rebar_rel_utils,
               rebar_reltool,
               rebar_require_vsn,
+              rebar_shell,
               rebar_subdirs,
               rebar_templater,
               rebar_upgrade,
@@ -77,6 +78,7 @@
                                rebar_eunit,
                                rebar_escripter,
                                rebar_edoc,
+                               rebar_shell,
                                rebar_xref
                               ]},
 
