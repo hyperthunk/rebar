@@ -552,3 +552,4 @@ load_plugin_module(Mod, Bin, Src) ->
             {module, Mod} = code:load_binary(Mod, Src, Bin),
             Mod
     end.
+
