@@ -104,10 +104,12 @@ process_dir(Dir, ParentConfig, Command, DirSet) ->
 
         true ->
             AbsDir = filename:absname(Dir),
-            case processing_base_dir(Dir) of
-                false ->
-                    ?CONSOLE("==> Entering directory `~s'\n", [AbsDir]);
+            ShouldPrintDir = not (is_skip_dir(Dir) orelse processing_base_dir(Dir)),
+
+            case ShouldPrintDir of
                 true ->
+                    ?INFO("==> Entering directory `~s'\n", [AbsDir]);
+                _ ->
                     ok
             end,
 
@@ -128,10 +130,10 @@ process_dir(Dir, ParentConfig, Command, DirSet) ->
             Res = maybe_process_dir(ModuleSet, Config, CurrentCodePath,
                                     Dir, Command, DirSet),
 
-            case processing_base_dir(Dir) of
-                false ->
-                    ?CONSOLE("==> Leaving directory `~s'\n", [AbsDir]);
+            case ShouldPrintDir of
                 true ->
+                    ?INFO("==> Leaving directory `~s'\n", [AbsDir]);
+                false ->
                     ok
             end,
 
