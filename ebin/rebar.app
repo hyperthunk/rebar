@@ -3,7 +3,7 @@
 
 {application, rebar,
  [{description, "Rebar: Erlang Build Tool"},
-  {vsn, "2"},
+  {vsn, "2.0.0"},
   {modules, [ rebar,
               rebar_abnfc_compiler,
               rebar_appups,
@@ -40,7 +40,11 @@
   {registered, []},
   {applications, [kernel,
                   stdlib,
-                  sasl]},
+                  sasl,
+                  compiler,
+                  crypto,
+                  syntax_tools,
+                  tools]},
   {env, [
          %% Default log level
          {log_level, error},
