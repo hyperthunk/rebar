@@ -52,18 +52,18 @@ preprocess(Config, _) ->
     %% Side effect to set deps_dir globally for all dependencies from
     %% top level down. Means the root deps_dir is honoured or the default
     %% used globally since it will be set on the first time through here
-    set_global_deps_dir(Config, rebar_config:get_global(deps_dir, [])),
+    Config1 = set_global_deps_dir(Config, get_global_deps_dir(Config, [])),
 
     %% Get the list of deps for the current working directory and identify those
     %% deps that are available/present.
-    Deps = rebar_config:get_local(Config, deps, []),
-    {Config1, {AvailableDeps, MissingDeps}} = find_deps(Config, find, Deps),
+    Deps = rebar_config:get_local(Config1, deps, []),
+    {Config2, {AvailableDeps, MissingDeps}} = find_deps(Config1, find, Deps),
 
     ?DEBUG("Available deps: ~p\n", [AvailableDeps]),
     ?DEBUG("Missing deps  : ~p\n", [MissingDeps]),
 
     %% Add available deps to code path
-    Config2 = update_deps_code_path(Config1, AvailableDeps),
+    Config3 = update_deps_code_path(Config2, AvailableDeps),
 
     %% If skip_deps=true, mark each dep dir as a skip_dir w/ the core so that
     %% the current command doesn't run on the dep dir. However, pre/postprocess
@@ -73,9 +73,9 @@ preprocess(Config, _) ->
                         lists:foldl(
                           fun(#dep{dir = Dir}, C) ->
                                   rebar_config:set_skip_dir(C, Dir)
-                          end, Config2, AvailableDeps);
+                          end, Config3, AvailableDeps);
                     _ ->
-                        Config2
+                        Config3
                 end,
 
     %% Return all the available dep directories for process
@@ -94,8 +94,8 @@ compile(Config, AppFile) ->
     'check-deps'(Config, AppFile).
 
 %% set REBAR_DEPS_DIR and ERL_LIBS environment variables
-setup_env(_Config) ->
-    {true, DepsDir} = get_deps_dir(),
+setup_env(Config) ->
+    {true, DepsDir} = get_deps_dir(Config),
     %% include rebar's DepsDir in ERL_LIBS
     Separator = case os:type() of
                     {win32, nt} ->
@@ -149,7 +149,8 @@ setup_env(_Config) ->
     {Config1, Deps} = find_deps(Config, read, RawDeps),
 
     %% Update each dep
-    UpdatedDeps = [update_source(D) || D <- Deps, D#dep.source =/= undefined],
+    UpdatedDeps = [maybe_update_source(Config, D)
+                   || D <- Deps, D#dep.source =/= undefined],
 
     %% Add each updated dep to our list of dirs for post-processing. This yields
     %% the necessary transitivity of the deps
@@ -157,7 +158,7 @@ setup_env(_Config) ->
 
 'delete-deps'(Config, _) ->
     %% Delete all the available deps in our deps/ directory, if any
-    {true, DepsDir} = get_deps_dir(),
+    {true, DepsDir} = get_deps_dir(Config),
     Deps = rebar_config:get_local(Config, deps, []),
     {Config1, {AvailableDeps, _}} = find_deps(Config, find, Deps),
     _ = [delete_dep(D)
@@ -183,17 +184,25 @@ setup_env(_Config) ->
 %% need all deps in same dir and should be the one set by the root rebar.config
 %% Sets a default if root config has no deps_dir set
 set_global_deps_dir(Config, []) ->
-    rebar_config:set_global(deps_dir,
-                            rebar_config:get_local(Config, deps_dir, "deps"));
-set_global_deps_dir(_Config, _DepsDir) ->
-    ok.
+    GlobalDepsDir = rebar_config:get_local(Config, deps_dir, "deps"),
+    rebar_config:set_xconf(Config, global_deps_dir, GlobalDepsDir);
+set_global_deps_dir(Config, _DepsDir) ->
+    Config.
 
-get_deps_dir() ->
-    get_deps_dir("").
+get_global_deps_dir(Config, Default) ->
+    case rebar_config:get_xconf(Config, global_deps_dir) of
+        error ->
+            Default;
+        {ok, GlobalDepsDir} ->
+            GlobalDepsDir
+    end.
 
-get_deps_dir(App) ->
+get_deps_dir(Config) ->
+    get_deps_dir(Config, "").
+
+get_deps_dir(Config, App) ->
     BaseDir = rebar_config:get_global(base_dir, []),
-    DepsDir = rebar_config:get_global(deps_dir, "deps"),
+    DepsDir = get_global_deps_dir(Config, "deps"),
     {true, filename:join([BaseDir, DepsDir, App])}.
 
 dep_dirs(Deps) ->
@@ -262,7 +271,7 @@ find_dep(Config, Dep) ->
 find_dep(Config, Dep, undefined) ->
     %% 'source' is undefined.  If Dep is not satisfied locally,
     %% go ahead and find it amongst the lib_dir's.
-    case find_dep_in_dir(Config, Dep, get_deps_dir(Dep#dep.app)) of
+    case find_dep_in_dir(Config, Dep, get_deps_dir(Config, Dep#dep.app)) of
         {_Config1, {avail, _Dir}} = Avail ->
             Avail;
         {Config1, {missing, _}} ->
@@ -272,7 +281,7 @@ find_dep(Config, Dep, _Source) ->
     %% _Source is defined.  Regardless of what it is, we must find it
     %% locally satisfied or fetch it from the original source
     %% into the project's deps
-    find_dep_in_dir(Config, Dep, get_deps_dir(Dep#dep.app)).
+    find_dep_in_dir(Config, Dep, get_deps_dir(Config, Dep#dep.app)).
 
 find_dep_in_dir(Config, _Dep, {false, Dir}) ->
     {Config, {missing, Dir}};
@@ -365,7 +374,7 @@ use_source(Config, Dep, Count) ->
         false ->
             ?CONSOLE("Pulling ~p from ~p\n", [Dep#dep.app, Dep#dep.source]),
             require_source_engine(Dep#dep.source),
-            {true, TargetDir} = get_deps_dir(Dep#dep.app),
+            {true, TargetDir} = get_deps_dir(Config, Dep#dep.app),
             download_source(TargetDir, Dep#dep.source),
             use_source(Config, Dep#dep { dir = TargetDir }, Count-1)
     end.
@@ -408,12 +417,12 @@ download_source(AppDir, {rsync, Url}) ->
     ok = filelib:ensure_dir(AppDir),
     rebar_utils:sh(?FMT("rsync -az --delete ~s/ ~s", [Url, AppDir]), []).
 
-update_source(Dep) ->
+maybe_update_source(Config, Dep) ->
     %% It's possible when updating a source, that a given dep does not have a
     %% VCS directory, such as when a source archive is built of a project, with
     %% all deps already downloaded/included. So, verify that the necessary VCS
     %% directory exists before attempting to do the update.
-    {true, AppDir} = get_deps_dir(Dep#dep.app),
+    {true, AppDir} = get_deps_dir(Config, Dep#dep.app),
     case has_vcs_dir(element(1, Dep#dep.source), AppDir) of
         true ->
             ?CONSOLE("Updating ~p from ~p\n", [Dep#dep.app, Dep#dep.source]),
