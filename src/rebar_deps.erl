@@ -52,7 +52,8 @@ preprocess(Config, _) ->
     %% Side effect to set deps_dir globally for all dependencies from
     %% top level down. Means the root deps_dir is honoured or the default
     %% used globally since it will be set on the first time through here
-    Config1 = set_global_deps_dir(Config, get_global_deps_dir(Config, [])),
+    DepsDir = rebar_config:get_global(Config, deps_dir, []),
+    Config1 = set_global_deps_dir(Config, DepsDir),
 
     %% Get the list of deps for the current working directory and identify those
     %% deps that are available/present.
@@ -68,7 +69,7 @@ preprocess(Config, _) ->
     %% If skip_deps=true, mark each dep dir as a skip_dir w/ the core so that
     %% the current command doesn't run on the dep dir. However, pre/postprocess
     %% WILL run (and we want it to) for transitivity purposes.
-    NewConfig = case rebar_config:get_global(skip_deps, false) of
+    NewConfig = case rebar_config:get_global(Config3, skip_deps, false) of
                     "true" ->
                         lists:foldl(
                           fun(#dep{dir = Dir}, C) ->
@@ -82,10 +83,10 @@ preprocess(Config, _) ->
     {ok, NewConfig, dep_dirs(AvailableDeps)}.
 
 postprocess(Config, _) ->
-    case rebar_config:get_xconf(Config, ?MODULE) of
-        error ->
+    case rebar_config:get_xconf(Config, ?MODULE, undefined) of
+        undefined ->
             {ok, []};
-        {ok, Dirs} ->
+        Dirs ->
             NewConfig = rebar_config:erase_xconf(Config, ?MODULE),
             {ok, NewConfig, Dirs}
     end.
@@ -149,7 +150,7 @@ setup_env(Config) ->
     {Config1, Deps} = find_deps(Config, read, RawDeps),
 
     %% Update each dep
-    UpdatedDeps = [maybe_update_source(Config, D)
+    UpdatedDeps = [update_source(Config1, D)
                    || D <- Deps, D#dep.source =/= undefined],
 
     %% Add each updated dep to our list of dirs for post-processing. This yields
@@ -184,25 +185,17 @@ setup_env(Config) ->
 %% need all deps in same dir and should be the one set by the root rebar.config
 %% Sets a default if root config has no deps_dir set
 set_global_deps_dir(Config, []) ->
-    GlobalDepsDir = rebar_config:get_local(Config, deps_dir, "deps"),
-    rebar_config:set_xconf(Config, global_deps_dir, GlobalDepsDir);
+    rebar_config:set_global(Config, deps_dir,
+                            rebar_config:get_local(Config, deps_dir, "deps"));
 set_global_deps_dir(Config, _DepsDir) ->
     Config.
-
-get_global_deps_dir(Config, Default) ->
-    case rebar_config:get_xconf(Config, global_deps_dir) of
-        error ->
-            Default;
-        {ok, GlobalDepsDir} ->
-            GlobalDepsDir
-    end.
 
 get_deps_dir(Config) ->
     get_deps_dir(Config, "").
 
 get_deps_dir(Config, App) ->
-    BaseDir = rebar_config:get_global(base_dir, []),
-    DepsDir = get_global_deps_dir(Config, "deps"),
+    BaseDir = rebar_config:get_xconf(Config, base_dir, []),
+    DepsDir = rebar_config:get_global(Config, deps_dir, "deps"),
     {true, filename:join([BaseDir, DepsDir, App])}.
 
 dep_dirs(Deps) ->
@@ -417,7 +410,7 @@ download_source(AppDir, {rsync, Url}) ->
     ok = filelib:ensure_dir(AppDir),
     rebar_utils:sh(?FMT("rsync -az --delete ~s/ ~s", [Url, AppDir]), []).
 
-maybe_update_source(Config, Dep) ->
+update_source(Config, Dep) ->
     %% It's possible when updating a source, that a given dep does not have a
     %% VCS directory, such as when a source archive is built of a project, with
     %% all deps already downloaded/included. So, verify that the necessary VCS
@@ -427,7 +420,7 @@ maybe_update_source(Config, Dep) ->
         true ->
             ?CONSOLE("Updating ~p from ~p\n", [Dep#dep.app, Dep#dep.source]),
             require_source_engine(Dep#dep.source),
-            update_source(AppDir, Dep#dep.source),
+            update_source1(AppDir, Dep#dep.source),
             Dep;
         false ->
             ?WARN("Skipping update for ~p: "
@@ -435,29 +428,29 @@ maybe_update_source(Config, Dep) ->
             Dep
     end.
 
-update_source(AppDir, {git, Url}) ->
-    update_source(AppDir, {git, Url, {branch, "HEAD"}});
-update_source(AppDir, {git, Url, ""}) ->
-    update_source(AppDir, {git, Url, {branch, "HEAD"}});
-update_source(AppDir, {git, _Url, {branch, Branch}}) ->
+update_source1(AppDir, {git, Url}) ->
+    update_source1(AppDir, {git, Url, {branch, "HEAD"}});
+update_source1(AppDir, {git, Url, ""}) ->
+    update_source1(AppDir, {git, Url, {branch, "HEAD"}});
+update_source1(AppDir, {git, _Url, {branch, Branch}}) ->
     ShOpts = [{cd, AppDir}],
     rebar_utils:sh("git fetch origin", ShOpts),
     rebar_utils:sh(?FMT("git checkout -q origin/~s", [Branch]), ShOpts);
-update_source(AppDir, {git, _Url, {tag, Tag}}) ->
+update_source1(AppDir, {git, _Url, {tag, Tag}}) ->
     ShOpts = [{cd, AppDir}],
     rebar_utils:sh("git fetch --tags origin", ShOpts),
     rebar_utils:sh(?FMT("git checkout -q ~s", [Tag]), ShOpts);
-update_source(AppDir, {git, _Url, Refspec}) ->
+update_source1(AppDir, {git, _Url, Refspec}) ->
     ShOpts = [{cd, AppDir}],
     rebar_utils:sh("git fetch origin", ShOpts),
     rebar_utils:sh(?FMT("git checkout -q ~s", [Refspec]), ShOpts);
-update_source(AppDir, {svn, _Url, Rev}) ->
+update_source1(AppDir, {svn, _Url, Rev}) ->
     rebar_utils:sh(?FMT("svn up -r ~s", [Rev]), [{cd, AppDir}]);
-update_source(AppDir, {hg, _Url, Rev}) ->
+update_source1(AppDir, {hg, _Url, Rev}) ->
     rebar_utils:sh(?FMT("hg pull -u -r ~s", [Rev]), [{cd, AppDir}]);
-update_source(AppDir, {bzr, _Url, Rev}) ->
+update_source1(AppDir, {bzr, _Url, Rev}) ->
     rebar_utils:sh(?FMT("bzr update -r ~s", [Rev]), [{cd, AppDir}]);
-update_source(AppDir, {rsync, Url}) ->
+update_source1(AppDir, {rsync, Url}) ->
     rebar_utils:sh(?FMT("rsync -az --delete ~s/ ~s",[Url,AppDir]),[]).
 
 %% ===================================================================
