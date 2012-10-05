@@ -39,10 +39,10 @@ process_commands([], ParentConfig) ->
     case {get_operations(ParentConfig), AbortTrapped} of
         {0, _} ->
             %% None of the commands had any effect
-            ?ABORT;
+            ?FAIL;
         {_, true} ->
             %% An abort was previously trapped
-            ?ABORT;
+            ?FAIL;
         _ ->
             ok
     end;
@@ -77,7 +77,7 @@ process_commands([Command | Rest], ParentConfig) ->
             throw:rebar_abort ->
                 case rebar_config:get_xconf(ParentConfig1, keep_going, false) of
                     false ->
-                        ?ABORT;
+                        ?FAIL;
                     true ->
                         ?WARN("Continuing on after abort: ~p\n", [Rest]),
                         rebar_config:set_xconf(ParentConfig1,
@@ -242,23 +242,20 @@ remember_cwd_subdir(Cwd, Subdirs) ->
 maybe_load_local_config(Dir, ParentConfig) ->
     %% We need to ensure we don't overwrite custom
     %% config when we are dealing with base_dir.
-    case processing_base_dir(ParentConfig, Dir) of
+    case rebar_utils:processing_base_dir(ParentConfig, Dir) of
         true ->
             ParentConfig;
         false ->
             rebar_config:new(ParentConfig)
     end.
 
-processing_base_dir(Config, Dir) ->
-    Dir == rebar_config:get_xconf(Config, base_dir).
-
 %%
 %% Given a list of directories and a set of previously processed directories,
 %% process each one we haven't seen yet
 %%
 process_each([], _Command, Config, _ModuleSetFile, DirSet) ->
-    %% reset cached setup_env
-    Config1 = rebar_config:reset_env(Config),
+    %% reset cached (setup_env) envs
+    Config1 = rebar_config:reset_envs(Config),
     {Config1, DirSet};
 process_each([Dir | Rest], Command, Config, ModuleSetFile, DirSet) ->
     case sets:is_element(Dir, DirSet) of
@@ -268,8 +265,8 @@ process_each([Dir | Rest], Command, Config, ModuleSetFile, DirSet) ->
         false ->
             {Config1, DirSet2} = process_dir(Dir, Config, Command, DirSet),
             Config2 = rebar_config:clean_config(Config, Config1),
-            %% reset cached setup_env
-            Config3 = rebar_config:reset_env(Config2),
+            %% reset cached (setup_env) envs
+            Config3 = rebar_config:reset_envs(Config2),
             process_each(Rest, Command, Config3, ModuleSetFile, DirSet2)
     end.
 
@@ -339,7 +336,7 @@ execute(Command, Modules, Config, ModuleFile, Env) ->
                     apply_hooks(post_hooks, NewConfig, Command, Env),
                     NewConfig;
                 {error, failed} ->
-                    ?ABORT;
+                    ?FAIL;
                 {Module, {error, _} = Other} ->
                     ?ABORT("~p failed while processing ~s in module ~s: ~s\n",
                            [Command, Dir, Module,
@@ -375,9 +372,11 @@ restore_code_path(no_change) ->
 restore_code_path({old, Path}) ->
     %% Verify that all of the paths still exist -- some dynamically
     %% added paths can get blown away during clean.
-    true = code:set_path([F || F <- Path, filelib:is_file(F)]),
+    true = code:set_path([F || F <- Path, erl_prim_loader_is_file(F)]),
     ok.
 
+erl_prim_loader_is_file(File) ->
+    erl_prim_loader:read_file_info(File) =/= error.
 
 expand_lib_dirs([], _Root, Acc) ->
     Acc;
@@ -434,7 +433,7 @@ setup_envs(Config, Modules) ->
                         case erlang:function_exported(M, setup_env, 1) of
                             true ->
                                 Env = M:setup_env(C),
-                                C1 = rebar_config:set_env(C, M, Env),
+                                C1 = rebar_config:save_env(C, M, Env),
                                 {C1, E++Env};
                             false ->
                                 T
@@ -553,3 +552,4 @@ load_plugin_module(Mod, Bin, Src) ->
             {module, Mod} = code:load_binary(Mod, Src, Bin),
             Mod
     end.
+

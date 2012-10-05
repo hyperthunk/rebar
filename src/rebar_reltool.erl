@@ -58,10 +58,10 @@ generate(Config0, ReltoolFile) ->
         ok ->
             {ok, Config};
         {error, failed} ->
-            ?ABORT;
+            ?FAIL;
         Other2 ->
             ?ERROR("Unexpected error: ~p\n", [Other2]),
-            ?ABORT
+            ?FAIL
     end.
 
 overlay(Config, ReltoolFile) ->
@@ -149,14 +149,12 @@ overlay_vars(Config, Vars0, ReltoolConfig) ->
 load_vars_file(undefined) ->
     dict:new();
 load_vars_file(File) ->
-    case file:consult(File) of
+    case rebar_config:consult_file(File) of
         {ok, Terms} ->
             dict:from_list(Terms);
         {error, Reason} ->
             ?ABORT("Unable to load overlay_vars from ~p: ~p\n", [File, Reason])
     end.
-
-
 
 validate_rel_apps(ReltoolServer, {sys, ReltoolConfig}) ->
     case lists:keyfind(rel, 1, ReltoolConfig) of
@@ -189,7 +187,6 @@ app_exists(App, Server) when is_atom(App) ->
     end;
 app_exists(AppTuple, Server) when is_tuple(AppTuple) ->
     app_exists(element(1, AppTuple), Server).
-
 
 run_reltool(Server, Config, ReltoolConfig) ->
     case reltool:get_target_spec(Server) of
@@ -224,7 +221,6 @@ run_reltool(Server, Config, ReltoolConfig) ->
             ?ABORT("Unable to generate spec: ~s\n", [Reason])
     end.
 
-
 mk_target_dir(Config, TargetDir) ->
     case filelib:ensure_dir(filename:join(TargetDir, "dummy")) of
         ok ->
@@ -238,14 +234,13 @@ mk_target_dir(Config, TargetDir) ->
                 _ ->
                     ?ERROR("Release target directory ~p already exists!\n",
                            [TargetDir]),
-                    ?ABORT
+                    ?FAIL
             end;
         {error, Reason} ->
             ?ERROR("Failed to make target dir ~p: ~s\n",
                    [TargetDir, file:format_error(Reason)]),
-            ?ABORT
+            ?FAIL
     end.
-
 
 dump_spec(Config, Spec) ->
     case rebar_config:get_global(Config, dump_spec, "0") of
@@ -349,10 +344,22 @@ apply_file_info(InFile, OutFile) ->
 
 create_RELEASES(TargetDir, RelName, RelVsn) ->
     ReleasesDir = filename:join(TargetDir, "releases"),
+    RelFile = filename:join([ReleasesDir, RelVsn, RelName ++ ".rel"]),
+    Apps = rebar_rel_utils:get_rel_apps(RelFile),
+    TargetLib = filename:join(TargetDir,"lib"),
+
+    AppDirs =
+        [ {App, Vsn, TargetLib}
+          || {App, Vsn} <- Apps,
+             filelib:is_dir(
+               filename:join(TargetLib,
+                             lists:concat([App, "-", Vsn]))) ],
+
     case release_handler:create_RELEASES(
-           TargetDir, ReleasesDir,
-           filename:join([ReleasesDir, RelVsn, RelName ++ ".rel"]),
-           filename:join(TargetDir, "lib")) of
+           code:root_dir(),
+           ReleasesDir,
+           RelFile,
+           AppDirs) of
         ok ->
             ok;
         {error, Reason} ->

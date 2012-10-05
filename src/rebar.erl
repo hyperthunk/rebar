@@ -87,11 +87,10 @@ run(RawArgs) ->
         true ->
             io:format("Profiling!\n"),
             try
-                fprof:apply(fun([C, A]) -> run_aux(C, A) end,
-                            [BaseConfig1, Cmds])
+                fprof:apply(fun run_aux/2, [BaseConfig1, Cmds])
             after
-                fprof:profile(),
-                fprof:analyse([{dest, "fprof.analysis"}])
+                ok = fprof:profile(),
+                ok = fprof:analyse([{dest, "fprof.analysis"}])
             end;
         false ->
             run_aux(BaseConfig1, Cmds)
@@ -297,11 +296,20 @@ generate-upgrade  previous_release=path  Build an upgrade package
 
 generate-appups   previous_release=path  Generate appup files
 
-test-compile                         Compile sources for eunit/qc run
-eunit       [suites=foo]             Run eunit [test/foo_tests.erl] tests
+eunit       [suites=foo]             Run eunit tests in foo.erl and
+                                     test/foo_tests.erl
+            [suites=foo] [tests=bar] Run specific eunit tests [first test name
+                                     starting with 'bar' in foo.erl and
+                                     test/foo_tests.erl]
+            [tests=bar]              For every existing suite, run the first
+                                     test whose name starts with bar and, if
+                                     no such test exists, run the test whose
+                                     name starts with bar in the suite's
+                                     _tests module
+
 ct          [suites=] [case=]        Run common_test suites
 
-qc                                   Test QuichCheck properties
+qc                                   Test QuickCheck properties
 
 xref                                 Run cross reference analysis
 
@@ -366,8 +374,7 @@ command_names() ->
     ["check-deps", "clean", "compile", "create", "create-app", "create-node",
      "ct", "delete-deps", "doc", "eunit", "generate", "generate-appups",
      "generate-upgrade", "get-deps", "help", "list-deps", "list-templates",
-     "test-compile", "qc", "update-deps", "overlay", "shell", "version",
-     "xref"].
+     "qc", "update-deps", "overlay", "shell", "version", "xref"].
 
 unabbreviate_command_names([]) ->
     [];
