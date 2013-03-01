@@ -27,6 +27,7 @@
 -module(rebar).
 
 -export([main/1,
+         run/2,
          help/0,
          parse_args/1,
          version/0,
@@ -52,6 +53,7 @@
 %% Public API
 %% ====================================================================
 
+%% escript Entry point
 main(Args) ->
     case catch(run(Args)) of
         ok ->
@@ -65,11 +67,26 @@ main(Args) ->
             rebar_utils:delayed_halt(1)
     end.
 
+%% Erlang-API entry point
+run(BaseConfig, Commands) ->
+    _ = application:load(rebar),
+    run_aux(BaseConfig, Commands).
+
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
 
+run(["help"|RawCmds]) when RawCmds =/= [] ->
+    ok = load_rebar_app(),
+    Cmds = unabbreviate_command_names(RawCmds),
+    Args = parse_args(Cmds),
+    BaseConfig = init_config(Args),
+    {BaseConfig1, _} = save_options(BaseConfig, Args),
+    BaseConfig2 = init_config1(BaseConfig1),
+    rebar_core:help(BaseConfig2, [list_to_atom(C) || C <- Cmds]);
 run(["help"]) ->
+    help();
+run(["info"|_]) ->
     help();
 run(["version"]) ->
     ok = load_rebar_app(),
@@ -87,11 +104,10 @@ run(RawArgs) ->
         true ->
             io:format("Profiling!\n"),
             try
-                fprof:apply(fun([C, A]) -> run_aux(C, A) end,
-                            [BaseConfig1, Cmds])
+                fprof:apply(fun run_aux/2, [BaseConfig1, Cmds])
             after
-                fprof:profile(),
-                fprof:analyse([{dest, "fprof.analysis"}])
+                ok = fprof:profile(),
+                ok = fprof:analyse([{dest, "fprof.analysis"}])
             end;
         false ->
             run_aux(BaseConfig1, Cmds)
@@ -132,6 +148,16 @@ init_config({Options, _NonOptArgs}) ->
     %% Initialize vsn cache
     rebar_config:set_xconf(BaseConfig1, vsn_cache, dict:new()).
 
+init_config1(BaseConfig) ->
+    %% Determine the location of the rebar executable; important for pulling
+    %% resources out of the escript
+    ScriptName = filename:absname(escript:script_name()),
+    BaseConfig1 = rebar_config:set_xconf(BaseConfig, escript, ScriptName),
+    ?DEBUG("Rebar location: ~p\n", [ScriptName]),
+    %% Note the top-level directory for reference
+    AbsCwd = filename:absname(rebar_utils:get_cwd()),
+    rebar_config:set_xconf(BaseConfig1, base_dir, AbsCwd).
+
 run_aux(BaseConfig, Commands) ->
     %% Make sure crypto is running
     case crypto:start() of
@@ -142,18 +168,10 @@ run_aux(BaseConfig, Commands) ->
     %% Convert command strings to atoms
     CommandAtoms = [list_to_atom(C) || C <- Commands],
 
-    %% Determine the location of the rebar executable; important for pulling
-    %% resources out of the escript
-    ScriptName = filename:absname(escript:script_name()),
-    BaseConfig1 = rebar_config:set_xconf(BaseConfig, escript, ScriptName),
-    ?DEBUG("Rebar location: ~p\n", [ScriptName]),
-
-    %% Note the top-level directory for reference
-    AbsCwd = filename:absname(rebar_utils:get_cwd()),
-    BaseConfig2 = rebar_config:set_xconf(BaseConfig1, base_dir, AbsCwd),
+    BaseConfig1 = init_config1(BaseConfig),
 
     %% Process each command, resetting any state between each one
-    rebar_core:process_commands(CommandAtoms, BaseConfig2).
+    rebar_core:process_commands(CommandAtoms, BaseConfig1).
 
 %%
 %% print help/usage string
@@ -163,7 +181,29 @@ help() ->
     getopt:usage(OptSpecList, "rebar",
                  "[var=value,...] <command,...>",
                  [{"var=value", "rebar global variables (e.g. force=1)"},
-                  {"command", "Command to run (e.g. compile)"}]).
+                  {"command", "Command to run (e.g. compile)"}]),
+    ?CONSOLE(
+       "Core rebar.config options:~n"
+       "  ~p~n"
+       "  ~p~n"
+       "  ~p~n"
+       "  ~p~n"
+       "  ~p~n"
+       "  ~p~n",
+       [
+        {lib_dirs, []},
+        {sub_dirs, ["dir1", "dir2"]},
+        {plugins, [plugin1, plugin2]},
+        {plugin_dir, "some_other_directory"},
+        {pre_hooks, [{clean, "./prepare_package_files.sh"},
+                     {"linux", compile, "c_src/build_linux.sh"},
+                     {compile, "escript generate_headers"},
+                     {compile, "escript check_headers"}]},
+        {post_hooks, [{clean, "touch file1.out"},
+                      {"freebsd", compile, "c_src/freebsd_tweaks.sh"},
+                      {eunit, "touch file2.out"},
+                      {compile, "touch postcompile.out"}]}
+       ]).
 
 %%
 %% Parse command line arguments using getopt and also filtering out any
@@ -277,6 +317,8 @@ commands() ->
 clean                                Clean
 compile                              Compile sources
 
+escriptize                           Generate escript archive
+
 create      template= [var=foo,...]  Create skel based on template and vars
 create-app  [appid=myapp]            Create simple app skel
 create-node [nodeid=mynode]          Create simple node skel
@@ -297,11 +339,20 @@ generate-upgrade  previous_release=path  Build an upgrade package
 
 generate-appups   previous_release=path  Generate appup files
 
-test-compile                         Compile sources for eunit/qc run
-eunit       [suites=foo]             Run eunit [test/foo_tests.erl] tests
+eunit       [suites=foo]             Run eunit tests in foo.erl and
+                                     test/foo_tests.erl
+            [suites=foo] [tests=bar] Run specific eunit tests [first test name
+                                     starting with 'bar' in foo.erl and
+                                     test/foo_tests.erl]
+            [tests=bar]              For every existing suite, run the first
+                                     test whose name starts with bar and, if
+                                     no such test exists, run the test whose
+                                     name starts with bar in the suite's
+                                     _tests module
+
 ct          [suites=] [case=]        Run common_test suites
 
-qc                                   Test QuichCheck properties
+qc                                   Test QuickCheck properties
 
 xref                                 Run cross reference analysis
 
@@ -364,9 +415,9 @@ filter_flags(Config, [Item | Rest], Commands) ->
 
 command_names() ->
     ["check-deps", "clean", "compile", "create", "create-app", "create-node",
-     "ct", "delete-deps", "doc", "eunit", "generate", "generate-appups",
-     "generate-upgrade", "get-deps", "help", "list-deps", "list-templates",
-     "test-compile", "qc", "update-deps", "overlay", "shell", "version",
+     "ct", "delete-deps", "doc", "eunit", "escriptize", "generate",
+     "generate-appups", "generate-upgrade", "get-deps", "help", "list-deps",
+     "list-templates", "qc", "update-deps", "overlay", "shell", "version",
      "xref"].
 
 unabbreviate_command_names([]) ->

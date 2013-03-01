@@ -38,11 +38,14 @@
          'delete-deps'/2,
          'list-deps'/2]).
 
+%% for internal use only
+-export([info/2]).
 
 -record(dep, { dir,
                app,
                vsn_regex,
-               source }).
+               source,
+               is_raw }). %% is_raw = true means non-Erlang/OTP dependency
 
 %% ===================================================================
 %% Public API
@@ -52,8 +55,7 @@ preprocess(Config, _) ->
     %% Side effect to set deps_dir globally for all dependencies from
     %% top level down. Means the root deps_dir is honoured or the default
     %% used globally since it will be set on the first time through here
-    DepsDir = rebar_config:get_global(Config, deps_dir, []),
-    Config1 = set_global_deps_dir(Config, DepsDir),
+    Config1 = set_shared_deps_dir(Config, get_shared_deps_dir(Config, [])),
 
     %% Get the list of deps for the current working directory and identify those
     %% deps that are available/present.
@@ -69,18 +71,34 @@ preprocess(Config, _) ->
     %% If skip_deps=true, mark each dep dir as a skip_dir w/ the core so that
     %% the current command doesn't run on the dep dir. However, pre/postprocess
     %% WILL run (and we want it to) for transitivity purposes.
+    %%
+    %% Also, if skip_deps=comma,separated,app,list, then only the given
+    %% dependencies are skipped.
     NewConfig = case rebar_config:get_global(Config3, skip_deps, false) of
-                    "true" ->
-                        lists:foldl(
-                          fun(#dep{dir = Dir}, C) ->
-                                  rebar_config:set_skip_dir(C, Dir)
-                          end, Config3, AvailableDeps);
-                    _ ->
-                        Config3
-                end,
+        "true" ->
+            lists:foldl(
+                fun(#dep{dir = Dir}, C) ->
+                        rebar_config:set_skip_dir(C, Dir)
+                end, Config3, AvailableDeps);
+        Apps when is_list(Apps) ->
+            SkipApps = [list_to_atom(App) || App <- string:tokens(Apps, ",")],
+            lists:foldl(
+                fun(#dep{dir = Dir, app = App}, C) ->
+                        case lists:member(App, SkipApps) of
+                            true -> rebar_config:set_skip_dir(C, Dir);
+                            false -> C
+                        end
+                end, Config3, AvailableDeps);
+        _ ->
+            Config3
+    end,
+
+    %% Filtering out 'raw' dependencies so that no commands other than
+    %% deps-related can be executed on their directories.
+    NonRawAvailableDeps = [D || D <- AvailableDeps, not D#dep.is_raw],
 
     %% Return all the available dep directories for process
-    {ok, NewConfig, dep_dirs(AvailableDeps)}.
+    {ok, NewConfig, dep_dirs(NonRawAvailableDeps)}.
 
 postprocess(Config, _) ->
     case rebar_config:get_xconf(Config, ?MODULE, undefined) of
@@ -91,8 +109,9 @@ postprocess(Config, _) ->
             {ok, NewConfig, Dirs}
     end.
 
-compile(Config, AppFile) ->
-    'check-deps'(Config, AppFile).
+compile(Config, _) ->
+    {Config1, _AvailDeps} = do_check_deps(Config),
+    {ok, Config1}.
 
 %% set REBAR_DEPS_DIR and ERL_LIBS environment variables
 setup_env(Config) ->
@@ -112,20 +131,25 @@ setup_env(Config) ->
                end,
     [{"REBAR_DEPS_DIR", DepsDir}, ERL_LIBS].
 
-'check-deps'(Config, _) ->
+%% common function used by 'check-deps' and 'compile'
+do_check_deps(Config) ->
     %% Get the list of immediate (i.e. non-transitive) deps that are missing
     Deps = rebar_config:get_local(Config, deps, []),
     case find_deps(Config, find, Deps) of
-        {Config1, {_, []}} ->
+        {Config1, {AvailDeps, []}} ->
             %% No missing deps
-            {ok, Config1};
+            {Config1, AvailDeps};
         {_Config1, {_, MissingDeps}} ->
             lists:foreach(fun (#dep{app=App, vsn_regex=Vsn, source=Src}) ->
                                   ?CONSOLE("Dependency not available: "
                                            "~p-~s (~p)\n", [App, Vsn, Src])
                           end, MissingDeps),
-            ?ABORT
+            ?FAIL
     end.
+
+'check-deps'(Config, _) ->
+    {Config1, AvailDeps} = do_check_deps(Config),
+    {ok, save_dep_dirs(Config1, AvailDeps)}.
 
 'get-deps'(Config, _) ->
     %% Determine what deps are available and missing
@@ -172,7 +196,7 @@ setup_env(Config) ->
     case find_deps(Config, find, Deps) of
         {Config1, {AvailDeps, []}} ->
             lists:foreach(fun(Dep) -> print_source(Dep) end, AvailDeps),
-            {ok, Config1};
+            {ok, save_dep_dirs(Config1, AvailDeps)};
         {_, MissingDeps} ->
             ?ABORT("Missing dependencies: ~p\n", [MissingDeps])
     end.
@@ -181,21 +205,59 @@ setup_env(Config) ->
 %% Internal functions
 %% ===================================================================
 
+info(help, compile) ->
+    info_help("Display to be fetched dependencies");
+info(help, 'check-deps') ->
+    info_help("Display to be fetched dependencies");
+info(help, 'get-deps') ->
+    info_help("Fetch dependencies");
+info(help, 'update-deps') ->
+    info_help("Update fetched dependencies");
+info(help, 'delete-deps') ->
+    info_help("Delete fetched dependencies");
+info(help, 'list-deps') ->
+    info_help("List dependencies").
+
+info_help(Description) ->
+    ?CONSOLE(
+       "~s.~n"
+       "~n"
+       "Valid rebar.config options:~n"
+       "  ~p~n"
+       "  ~p~n"
+       "Valid command line options:~n"
+       "  deps_dir=\"deps\" (override default or rebar.config deps_dir)~n",
+       [
+        Description,
+        {deps_dir, "deps"},
+        {deps, [application_name,
+                {application_name, "1.0.*"},
+                {application_name, "1.0.*",
+                 {git, "git://github.com/basho/rebar.git", {branch, "master"}}},
+                {application_name, "",
+                 {git, "git://github.com/basho/rebar.git", {branch, "master"}},
+                 [raw]}]}
+       ]).
+
 %% Added because of trans deps,
 %% need all deps in same dir and should be the one set by the root rebar.config
 %% Sets a default if root config has no deps_dir set
-set_global_deps_dir(Config, []) ->
-    rebar_config:set_global(Config, deps_dir,
-                            rebar_config:get_local(Config, deps_dir, "deps"));
-set_global_deps_dir(Config, _DepsDir) ->
+set_shared_deps_dir(Config, []) ->
+    GlobalDepsDir = rebar_config:get_global(Config, deps_dir, "deps"),
+    DepsDir = rebar_config:get_local(Config, deps_dir, GlobalDepsDir),
+    rebar_config:set_xconf(Config, deps_dir, DepsDir);
+set_shared_deps_dir(Config, _DepsDir) ->
     Config.
+
+get_shared_deps_dir(Config, Default) ->
+    rebar_config:get_xconf(Config, deps_dir, Default).
 
 get_deps_dir(Config) ->
     get_deps_dir(Config, "").
 
 get_deps_dir(Config, App) ->
     BaseDir = rebar_config:get_xconf(Config, base_dir, []),
-    DepsDir = rebar_config:get_global(Config, deps_dir, "deps"),
+    DepsDir = get_shared_deps_dir(Config, "deps"),
     {true, filename:join([BaseDir, DepsDir, App])}.
 
 dep_dirs(Deps) ->
@@ -218,7 +280,7 @@ update_deps_code_path(Config, []) ->
 update_deps_code_path(Config, [Dep | Rest]) ->
     Config2 =
         case is_app_available(Config, Dep#dep.app,
-                              Dep#dep.vsn_regex, Dep#dep.dir) of
+                              Dep#dep.vsn_regex, Dep#dep.dir, Dep#dep.is_raw) of
             {Config1, {true, _}} ->
                 Dir = filename:join(Dep#dep.dir, "ebin"),
                 ok = filelib:ensure_dir(filename:join(Dir, "dummy")),
@@ -244,9 +306,14 @@ find_deps(Config, Mode, [App | Rest], Acc) when is_atom(App) ->
 find_deps(Config, Mode, [{App, VsnRegex} | Rest], Acc) when is_atom(App) ->
     find_deps(Config, Mode, [{App, VsnRegex, undefined} | Rest], Acc);
 find_deps(Config, Mode, [{App, VsnRegex, Source} | Rest], Acc) ->
+    find_deps(Config, Mode, [{App, VsnRegex, Source, []} | Rest], Acc);
+find_deps(Config, Mode, [{App, VsnRegex, Source, Opts} | Rest], Acc) when is_list(Opts) ->
     Dep = #dep { app = App,
                  vsn_regex = VsnRegex,
-                 source = Source },
+                 source = Source,
+                 %% dependency is considered raw (i.e. non-Erlang/OTP) when
+                 %% 'raw' option is present
+                 is_raw = proplists:get_value(raw, Opts, false) },
     {Config1, {Availability, FoundDir}} = find_dep(Config, Dep),
     find_deps(Config1, Mode, Rest,
               acc_deps(Mode, Availability, Dep, FoundDir, Acc));
@@ -281,7 +348,8 @@ find_dep_in_dir(Config, _Dep, {false, Dir}) ->
 find_dep_in_dir(Config, Dep, {true, Dir}) ->
     App = Dep#dep.app,
     VsnRegex = Dep#dep.vsn_regex,
-    case is_app_available(Config, App, VsnRegex, Dir) of
+    IsRaw = Dep#dep.is_raw,
+    case is_app_available(Config, App, VsnRegex, Dir, IsRaw) of
         {Config1, {true, _AppFile}} -> {Config1, {avail, Dir}};
         {Config1, {false, _}}       -> {Config1, {missing, Dir}}
     end.
@@ -306,7 +374,11 @@ require_source_engine(Source) ->
     true = source_engine_avail(Source),
     ok.
 
-is_app_available(Config, App, VsnRegex, Path) ->
+%% IsRaw = false means regular Erlang/OTP dependency
+%%
+%% IsRaw = true means non-Erlang/OTP dependency, e.g. the one that does not
+%% have a proper .app file
+is_app_available(Config, App, VsnRegex, Path, _IsRaw = false) ->
     ?DEBUG("is_app_available, looking for App ~p with Path ~p~n", [App, Path]),
     case rebar_app_utils:is_app_dir(Path) of
         {true, AppFile} ->
@@ -337,6 +409,19 @@ is_app_available(Config, App, VsnRegex, Path) ->
             ?WARN("Expected ~s to be an app dir (containing ebin/*.app), "
                   "but no .app found.\n", [Path]),
             {Config, {false, {missing_app_file, Path}}}
+    end;
+is_app_available(Config, App, _VsnRegex, Path, _IsRaw = true) ->
+    ?DEBUG("is_app_available, looking for Raw Depencency ~p with Path ~p~n", [App, Path]),
+    case filelib:is_dir(Path) of
+        true ->
+            %% TODO: look for version string in <Path>/VERSION file? Not clear
+            %% how to detect git/svn/hg/{cmd, ...} settings that can be passed
+            %% to rebar_utils:vcs_vsn/2 to obtain version dynamically
+            {Config, {true, Path}};
+        false ->
+            ?WARN("Expected ~s to be a raw dependency directory, "
+                  "but no directory found.\n", [Path]),
+            {Config, {false, {missing_raw_dependency_directory, Path}}}
     end.
 
 use_source(Config, Dep) ->
@@ -350,7 +435,7 @@ use_source(Config, Dep, Count) ->
         true ->
             %% Already downloaded -- verify the versioning matches the regex
             case is_app_available(Config, Dep#dep.app,
-                                  Dep#dep.vsn_regex, Dep#dep.dir) of
+                                  Dep#dep.vsn_regex, Dep#dep.dir, Dep#dep.is_raw) of
                 {Config1, {true, _}} ->
                     Dir = filename:join(Dep#dep.dir, "ebin"),
                     ok = filelib:ensure_dir(filename:join(Dir, "dummy")),
@@ -408,7 +493,19 @@ download_source(AppDir, {svn, Url, Rev}) ->
                    [{cd, filename:dirname(AppDir)}]);
 download_source(AppDir, {rsync, Url}) ->
     ok = filelib:ensure_dir(AppDir),
-    rebar_utils:sh(?FMT("rsync -az --delete ~s/ ~s", [Url, AppDir]), []).
+    rebar_utils:sh(?FMT("rsync -az --delete ~s/ ~s", [Url, AppDir]), []);
+download_source(AppDir, {fossil, Url}) ->
+    download_source(AppDir, {fossil, Url, ""});
+download_source(AppDir, {fossil, Url, latest}) ->
+    download_source(AppDir, {fossil, Url, ""});
+download_source(AppDir, {fossil, Url, Version}) ->
+    Repository = filename:join(AppDir, filename:basename(AppDir) ++ ".fossil"),
+    ok = filelib:ensure_dir(Repository),
+    ok = file:set_cwd(AppDir),
+    rebar_utils:sh(?FMT("fossil clone ~s ~s", [Url, Repository]),
+                   [{cd, AppDir}]),
+    rebar_utils:sh(?FMT("fossil open ~s ~s --nested", [Repository, Version]),
+                   []).
 
 update_source(Config, Dep) ->
     %% It's possible when updating a source, that a given dep does not have a
@@ -451,7 +548,16 @@ update_source1(AppDir, {hg, _Url, Rev}) ->
 update_source1(AppDir, {bzr, _Url, Rev}) ->
     rebar_utils:sh(?FMT("bzr update -r ~s", [Rev]), [{cd, AppDir}]);
 update_source1(AppDir, {rsync, Url}) ->
-    rebar_utils:sh(?FMT("rsync -az --delete ~s/ ~s",[Url,AppDir]),[]).
+    rebar_utils:sh(?FMT("rsync -az --delete ~s/ ~s",[Url,AppDir]),[]);
+update_source1(AppDir, {fossil, Url}) ->
+    update_source1(AppDir, {fossil, Url, ""});
+update_source1(AppDir, {fossil, Url, latest}) ->
+    update_source1(AppDir, {fossil, Url, ""});
+update_source1(AppDir, {fossil, _Url, Version}) ->
+    ok = file:set_cwd(AppDir),
+    rebar_utils:sh("fossil pull", [{cd, AppDir}]),
+    rebar_utils:sh(?FMT("fossil update ~s", [Version]), []).
+
 
 %% ===================================================================
 %% Source helper functions
@@ -462,7 +568,8 @@ source_engine_avail(Source) ->
     source_engine_avail(Name, Source).
 
 source_engine_avail(Name, Source)
-  when Name == hg; Name == git; Name == svn; Name == bzr; Name == rsync ->
+  when Name == hg; Name == git; Name == svn; Name == bzr; Name == rsync;
+       Name == fossil ->
     case vcs_client_vsn(Name) >= required_vcs_client_vsn(Name) of
         true ->
             true;
@@ -483,11 +590,12 @@ vcs_client_vsn(Path, VsnArg, VsnRegex) ->
             false
     end.
 
-required_vcs_client_vsn(hg)    -> {1, 1};
-required_vcs_client_vsn(git)   -> {1, 5};
-required_vcs_client_vsn(bzr)   -> {2, 0};
-required_vcs_client_vsn(svn)   -> {1, 6};
-required_vcs_client_vsn(rsync) -> {2, 0}.
+required_vcs_client_vsn(hg)     -> {1, 1};
+required_vcs_client_vsn(git)    -> {1, 5};
+required_vcs_client_vsn(bzr)    -> {2, 0};
+required_vcs_client_vsn(svn)    -> {1, 6};
+required_vcs_client_vsn(rsync)  -> {2, 0};
+required_vcs_client_vsn(fossil) -> {1, 0}.
 
 vcs_client_vsn(hg) ->
     vcs_client_vsn(rebar_utils:find_executable("hg"), " --version",
@@ -503,7 +611,10 @@ vcs_client_vsn(svn) ->
                    "svn, version (\\d+).(\\d+)");
 vcs_client_vsn(rsync) ->
     vcs_client_vsn(rebar_utils:find_executable("rsync"), " --version",
-                   "rsync  version (\\d+).(\\d+)").
+                   "rsync  version (\\d+).(\\d+)");
+vcs_client_vsn(fossil) ->
+    vcs_client_vsn(rebar_utils:find_executable("fossil"), " version",
+                   "version (\\d+).(\\d+)").
 
 has_vcs_dir(git, Dir) ->
     filelib:is_dir(filename:join(Dir, ".git"));

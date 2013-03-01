@@ -29,13 +29,16 @@
 -export([compile/2,
          clean/2]).
 
+%% for internal use only
+-export([info/2]).
+
 -include("rebar.hrl").
 
 %% ===================================================================
 %% Public API
 %% ===================================================================
 
-compile(_Config, _AppFile) ->
+compile(Config, _AppFile) ->
     case rebar_utils:find_files("src", ".*\\.proto$") of
         [] ->
             ok;
@@ -49,14 +52,13 @@ compile(_Config, _AppFile) ->
                                   Proto <- FoundFiles],
 
                     %% Compile each proto file
-                    compile_each(Targets);
+                    compile_each(Config, Targets);
                 false ->
                     ?ERROR("Protobuffs library not present in code path!\n",
                            []),
-                    ?ABORT
+                    ?FAIL
             end
     end.
-
 
 clean(_Config, _AppFile) ->
     %% Get a list of generated .beam and .hrl files and then delete them
@@ -71,10 +73,23 @@ clean(_Config, _AppFile) ->
             delete_each(Targets)
     end.
 
-
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
+
+info(help, compile) ->
+    info_help("Build Protobuffs (*.proto) sources");
+info(help, clean) ->
+    info_help("Delete Protobuffs (*.proto) build results").
+
+info_help(Description) ->
+    ?CONSOLE(
+       "~s.~n"
+       "~n"
+       "Valid rebar.config options:~n"
+       "  erl_opts is passed as compile_flags to "
+       "protobuffs_compile:scan_file/2~n",
+       [Description]).
 
 protobuffs_is_present() ->
     code:which(protobuffs_compile) =/= non_existing.
@@ -95,13 +110,15 @@ needs_compile(Proto, Beam) ->
     ActualBeam = filename:join(["ebin", filename:basename(Beam)]),
     filelib:last_modified(ActualBeam) < filelib:last_modified(Proto).
 
-compile_each([]) ->
+compile_each(_, []) ->
     ok;
-compile_each([{Proto, Beam, Hrl} | Rest]) ->
+compile_each(Config, [{Proto, Beam, Hrl} | Rest]) ->
     case needs_compile(Proto, Beam) of
         true ->
             ?CONSOLE("Compiling ~s\n", [Proto]),
-            case protobuffs_compile:scan_file(Proto) of
+            ErlOpts = rebar_utils:erl_opts(Config),
+            case protobuffs_compile:scan_file(Proto,
+                                              [{compile_flags,ErlOpts}]) of
                 ok ->
                     %% Compilation worked, but we need to move the
                     %% beam and .hrl file into the ebin/ and include/
@@ -113,14 +130,14 @@ compile_each([{Proto, Beam, Hrl} | Rest]) ->
                     ok = rebar_file_utils:mv(Hrl, "include"),
                     ok;
                 Other ->
-                    ?ERROR("Protobuff compile of ~s failed: ~p\n",
+                    ?ERROR("Protobuffs compile of ~s failed: ~p\n",
                            [Proto, Other]),
-                    ?ABORT
+                    ?FAIL
             end;
         false ->
             ok
     end,
-    compile_each(Rest).
+    compile_each(Config, Rest).
 
 delete_each([]) ->
     ok;

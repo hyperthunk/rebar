@@ -30,6 +30,9 @@
 
 -export([compile/2]).
 
+%% for internal use only
+-export([info/2]).
+
 -include("rebar.hrl").
 
 %% ===================================================================
@@ -45,6 +48,14 @@ compile(Config, _AppFile) ->
 %% Internal functions
 %% ===================================================================
 
+info(help, compile) ->
+    ?CONSOLE(
+       "Build Lisp Flavoured Erlang (*.lfe) sources.~n"
+       "~n"
+       "Valid rebar.config options:~n"
+       "  erl_opts is reused.'~n",
+       []).
+
 compile_lfe(Source, _Target, Config) ->
     case code:which(lfe_comp) of
         non_existing ->
@@ -57,16 +68,17 @@ compile_lfe(Source, _Target, Config) ->
                    "        {git, \"git://github.com/rvirding/lfe\",~n"
                    "         {tag, \"v0.6.1\"}}}~n"
                    "~n", []),
-            ?ABORT;
+            ?FAIL;
         _ ->
             Opts = [{i, "include"}, {outdir, "ebin"}, return]
                 ++ rebar_config:get_list(Config, erl_opts, []),
             case lfe_comp:file(Source, Opts) of
                 {ok, _Mod, Ws} ->
-                    rebar_base_compiler:ok_tuple(Source, Ws);
+                    rebar_base_compiler:ok_tuple(Config, Source, Ws);
                 {error, Es, Ws} ->
-                    rebar_base_compiler:error_tuple(Source, Es, Ws, Opts);
+                    rebar_base_compiler:error_tuple(Config, Source,
+                                                    Es, Ws, Opts);
                 _ ->
-                    ?ABORT
+                    ?FAIL
             end
     end.

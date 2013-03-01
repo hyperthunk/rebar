@@ -29,6 +29,9 @@
 -export([compile/2,
          clean/2]).
 
+%% for internal use only
+-export([info/2]).
+
 -include("rebar.hrl").
 
 %% ===================================================================
@@ -82,10 +85,25 @@ clean(_Config, File) ->
             ok
     end.
 
-
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
+
+info(help, compile) ->
+    info_help("Validate .app file");
+info(help, clean) ->
+    info_help("Delete .app file if generated from .app.src").
+
+info_help(Description) ->
+    ?CONSOLE(
+       "~s.~n"
+       "~n"
+       "Valid rebar.config options:~n"
+       "  ~p~n",
+       [
+        Description,
+        {validate_app_modules, true}
+       ]).
 
 preprocess(Config, AppSrcFile) ->
     case rebar_app_utils:load_app_file(Config, AppSrcFile) of
@@ -106,7 +124,7 @@ preprocess(Config, AppSrcFile) ->
 
             %% Setup file .app filename and write new contents
             AppFile = rebar_app_utils:app_src_to_app(AppSrcFile),
-            ok = file:write_file(AppFile, Spec),
+            ok = rebar_file_utils:write_file_if_contents_differ(AppFile, Spec),
 
             %% Make certain that the ebin/ directory is available
             %% on the code path
@@ -146,12 +164,12 @@ validate_name(AppName, File) ->
         false ->
             ?ERROR("Invalid ~s: name of application (~p) "
                    "must match filename.\n", [File, AppName]),
-            ?ABORT
+            ?FAIL
     end.
 
 validate_modules(AppName, undefined) ->
     ?ERROR("Missing modules declaration in ~p.app~n", [AppName]),
-    ?ABORT;
+    ?FAIL;
 
 validate_modules(AppName, Mods) ->
     %% Construct two sets -- one for the actual .beam files in ebin/
@@ -169,7 +187,7 @@ validate_modules(AppName, Mods) ->
                                      M <- MissingBeams]),
             ?ERROR("One or more modules listed in ~p.app are not "
                    "present in ebin/*.beam:\n~s", [AppName, Msg1]),
-            ?ABORT
+            ?FAIL
     end,
 
     %% Identify .beam files NOT list in the .app, but present in ebin/
@@ -181,7 +199,7 @@ validate_modules(AppName, Mods) ->
                                      M <- MissingMods]),
             ?ERROR("One or more .beam files exist that are not "
                    "listed in ~p.app:\n~s", [AppName, Msg2]),
-            ?ABORT
+            ?FAIL
     end.
 
 ebin_modules() ->

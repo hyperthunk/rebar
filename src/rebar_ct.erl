@@ -26,18 +26,21 @@
 %% -------------------------------------------------------------------
 %%
 %% Targets:
-%% test - runs common test suites in ./test
-%% int_test - runs suites in ./int_test
-%% perf_test - runs suites inm ./perf_test
+%% test - run common test suites in ./test
+%% int_test - run suites in ./int_test
+%% perf_test - run suites inm ./perf_test
 %%
 %% Global options:
 %% verbose=1 - show output from the common_test run as it goes
-%% suites="foo,bar" - runs <test>/foo_SUITE and <test>/bar_SUITE
-%% case="mycase" - runs individual test case foo_SUITE:mycase
+%% suites="foo,bar" - run <test>/foo_SUITE and <test>/bar_SUITE
+%% case="mycase" - run individual test case foo_SUITE:mycase
 %% -------------------------------------------------------------------
 -module(rebar_ct).
 
 -export([ct/2]).
+
+%% for internal use only
+-export([info/2]).
 
 -include("rebar.hrl").
 
@@ -47,43 +50,76 @@
 
 ct(Config, File) ->
     TestDir = rebar_config:get_local(Config, ct_dir, "test"),
-    run_test_if_present(TestDir, Config, File).
+    LogDir = rebar_config:get_local(Config, ct_log_dir, "logs"),
+    run_test_if_present(TestDir, LogDir, Config, File).
 
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
-run_test_if_present(TestDir, Config, File) ->
+
+info(help, ct) ->
+    ?CONSOLE(
+       "Run common_test suites.~n"
+       "~n"
+       "Valid rebar.config options:~n"
+       "  ~p~n"
+       "  ~p~n"
+       "  ~p~n"
+       "  ~p~n"
+       "Valid command line options:~n"
+       "  suites=foo,bar - run <test>/foo_SUITE and <test>/bar_SUITE~n"
+       "  case=\"mycase\" - run individual test case foo_SUITE:mycase~n",
+       [
+        {ct_dir, "itest"},
+        {ct_log_dir, "test/logs"},
+        {ct_extra_params, "-boot start_sasl -s myapp"},
+        {ct_use_short_names, true}
+       ]).
+
+run_test_if_present(TestDir, LogDir, Config, File) ->
     case filelib:is_dir(TestDir) of
         false ->
             ?WARN("~s directory not present - skipping\n", [TestDir]),
             ok;
         true ->
-            run_test(TestDir, Config, File)
+            case filelib:wildcard(TestDir ++ "/*_SUITE.{beam,erl}") of
+                [] ->
+                    ?WARN("~s directory present, but no common_test"
+                          ++ " SUITES - skipping\n", [TestDir]),
+                    ok;
+                _ ->
+                    try
+                        run_test(TestDir, LogDir, Config, File)
+                    catch
+                        throw:skip ->
+                            ok
+                    end
+            end
     end.
 
-run_test(TestDir, Config, _File) ->
-    {Cmd, RawLog} = make_cmd(TestDir, Config),
-    clear_log(RawLog),
-    case rebar_config:is_verbose(Config) of
-        false ->
-            Output = " >> " ++ RawLog ++ " 2>&1";
-        true ->
-            Output = " 2>&1 | tee -a " ++ RawLog
-    end,
+run_test(TestDir, LogDir, Config, _File) ->
+    {Cmd, RawLog} = make_cmd(TestDir, LogDir, Config),
+    ?DEBUG("ct_run cmd:~n~p~n", [Cmd]),
+    clear_log(LogDir, RawLog),
+    Output = case rebar_config:is_verbose(Config) of
+                 false ->
+                     " >> " ++ RawLog ++ " 2>&1";
+                 true ->
+                     " 2>&1 | tee -a " ++ RawLog
+             end,
 
     rebar_utils:sh(Cmd ++ Output, [{env,[{"TESTDIR", TestDir}]}]),
     check_log(Config, RawLog).
 
-
-clear_log(RawLog) ->
-    case filelib:ensure_dir("logs/index.html") of
+clear_log(LogDir, RawLog) ->
+    case filelib:ensure_dir(filename:join(LogDir, "index.html")) of
         ok ->
             NowStr = rebar_utils:now_str(),
             LogHeader = "--- Test run on " ++ NowStr ++ " ---\n",
             ok = file:write_file(RawLog, LogHeader);
         {error, Reason} ->
             ?ERROR("Could not create log dir - ~p\n", [Reason]),
-            ?ABORT
+            ?FAIL
     end.
 
 %% calling ct with erl does not return non-zero on failure - have to check
@@ -98,12 +134,12 @@ check_log(Config, RawLog) ->
         MakeFailed ->
             show_log(Config, RawLog),
             ?ERROR("Building tests failed\n",[]),
-            ?ABORT;
+            ?FAIL;
 
         RunFailed ->
             show_log(Config, RawLog),
             ?ERROR("One or more tests failed\n",[]),
-            ?ABORT;
+            ?FAIL;
 
         true ->
             ?CONSOLE("DONE.\n~s\n", [Msg])
@@ -120,9 +156,9 @@ show_log(Config, RawLog) ->
             ok
     end.
 
-make_cmd(TestDir, Config) ->
+make_cmd(TestDir, RawLogDir, Config) ->
     Cwd = rebar_utils:get_cwd(),
-    LogDir = filename:join(Cwd, "logs"),
+    LogDir = filename:join(Cwd, RawLogDir),
     EbinDir = filename:absname(filename:join(Cwd, "ebin")),
     IncludeDir = filename:join(Cwd, "include"),
     Include = case filelib:is_dir(IncludeDir) of
@@ -262,8 +298,10 @@ find_suite_path(Suite, TestDir) ->
     Path = filename:join(TestDir, Suite ++ "_SUITE.erl"),
     case filelib:is_regular(Path) of
         false ->
-            ?ERROR("Suite ~s not found\n", [Suite]),
-            ?ABORT;
+            ?WARN("Suite ~s not found\n", [Suite]),
+            %% Note - this throw is caught in run_test_if_present/3;
+            %% this solution was easier than refactoring the entire module.
+            throw(skip);
         true ->
             Path
     end.

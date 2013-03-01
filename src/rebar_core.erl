@@ -26,7 +26,7 @@
 %% -------------------------------------------------------------------
 -module(rebar_core).
 
--export([process_commands/2]).
+-export([process_commands/2, help/2]).
 
 -include("rebar.hrl").
 
@@ -34,15 +34,44 @@
 %% Internal functions
 %% ===================================================================
 
+help(ParentConfig, Commands) ->
+    %% get all core modules
+    {ok, AnyDirModules} = application:get_env(rebar, any_dir_modules),
+    {ok, RawCoreModules} = application:get_env(rebar, modules),
+    AppDirModules = proplists:get_value(app_dir, RawCoreModules),
+    RelDirModules = proplists:get_value(rel_dir, RawCoreModules),
+    CoreModules = AnyDirModules ++ AppDirModules ++ RelDirModules,
+
+    %% get plugin modules
+    Predirs = [],
+    Dir = rebar_utils:get_cwd(),
+    SubdirAssoc = remember_cwd_subdir(Dir, Predirs),
+    Config = maybe_load_local_config(Dir, ParentConfig),
+    {ok, PluginModules} = plugin_modules(Config, SubdirAssoc),
+
+    AllModules = CoreModules ++ PluginModules,
+
+    lists:foreach(
+      fun(Cmd) ->
+              ?CONSOLE("==> help ~p~n~n", [Cmd]),
+              CmdModules = select_modules(AllModules, Cmd, []),
+              Modules = select_modules(CmdModules, info, []),
+              lists:foreach(fun(M) ->
+                                    ?CONSOLE("=== ~p:~p ===~n", [M, Cmd]),
+                                    M:info(help, Cmd),
+                                    ?CONSOLE("~n", [])
+                            end, Modules)
+      end, Commands).
+
 process_commands([], ParentConfig) ->
     AbortTrapped = rebar_config:get_xconf(ParentConfig, abort_trapped, false),
     case {get_operations(ParentConfig), AbortTrapped} of
         {0, _} ->
             %% None of the commands had any effect
-            ?ABORT;
+            ?FAIL;
         {_, true} ->
             %% An abort was previously trapped
-            ?ABORT;
+            ?FAIL;
         _ ->
             ok
     end;
@@ -53,9 +82,10 @@ process_commands([Command | Rest], ParentConfig) ->
 
     ParentConfig4 =
         try
-            %% Convert the code path so that all the entries are absolute paths.
-            %% If not, code:set_path() may choke on invalid relative paths when trying
-            %% to restore the code path from inside a subdirectory.
+            %% Convert the code path so that all the entries are
+            %% absolute paths. If not, code:set_path() may choke on
+            %% invalid relative paths when trying to restore the code
+            %% path from inside a subdirectory.
             true = rebar_utils:expand_code_path(),
             {ParentConfig2, _DirSet} = process_dir(rebar_utils:get_cwd(),
                                                    ParentConfig1, Command,
@@ -68,8 +98,9 @@ process_commands([Command | Rest], ParentConfig) ->
                 _ ->
                     ok
             end,
-            %% TODO: reconsider after config inheritance removal/redesign
-            ParentConfig3 = rebar_config:clean_config(ParentConfig1, ParentConfig2),
+            %% TODO: reconsider after config inheritance removal/re-design
+            ParentConfig3 = rebar_config:clean_config(ParentConfig1,
+                                                      ParentConfig2),
             %% Wipe out vsn cache to avoid invalid hits when
             %% dependencies are updated
             rebar_config:set_xconf(ParentConfig3, vsn_cache, dict:new())
@@ -77,7 +108,7 @@ process_commands([Command | Rest], ParentConfig) ->
             throw:rebar_abort ->
                 case rebar_config:get_xconf(ParentConfig1, keep_going, false) of
                     false ->
-                        ?ABORT;
+                        ?FAIL;
                     true ->
                         ?WARN("Continuing on after abort: ~p\n", [Rest]),
                         rebar_config:set_xconf(ParentConfig1,
@@ -107,29 +138,29 @@ process_dir(Dir, ParentConfig, Command, DirSet) ->
             %% to process this dir.
             {ok, AvailModuleSets} = application:get_env(rebar, modules),
             ModuleSet = choose_module_set(AvailModuleSets, Dir),
-            maybe_process_dir(ModuleSet, Config, CurrentCodePath,
+            skip_or_process_dir(ModuleSet, Config, CurrentCodePath,
                               Dir, Command, DirSet)
     end.
 
-maybe_process_dir({[], undefined}=ModuleSet, Config, CurrentCodePath,
+skip_or_process_dir({[], undefined}=ModuleSet, Config, CurrentCodePath,
                   Dir, Command, DirSet) ->
-    process_dir0(Dir, Command, DirSet, Config, CurrentCodePath, ModuleSet);
-maybe_process_dir({_, ModuleSetFile}=ModuleSet, Config, CurrentCodePath,
+    process_dir1(Dir, Command, DirSet, Config, CurrentCodePath, ModuleSet);
+skip_or_process_dir({_, ModuleSetFile}=ModuleSet, Config, CurrentCodePath,
                   Dir, Command, DirSet) ->
     case lists:suffix(".app.src", ModuleSetFile)
         orelse lists:suffix(".app", ModuleSetFile) of
         true ->
             %% .app or .app.src file, check if is_skipped_app
-            maybe_process_dir0(ModuleSetFile, ModuleSet,
+            skip_or_process_dir1(ModuleSetFile, ModuleSet,
                                Config, CurrentCodePath, Dir,
                                Command, DirSet);
         false ->
             %% not an app dir, no need to consider apps=/skip_apps=
-            process_dir0(Dir, Command, DirSet, Config,
+            process_dir1(Dir, Command, DirSet, Config,
                          CurrentCodePath, ModuleSet)
     end.
 
-maybe_process_dir0(AppFile, ModuleSet, Config, CurrentCodePath,
+skip_or_process_dir1(AppFile, ModuleSet, Config, CurrentCodePath,
                    Dir, Command, DirSet) ->
     case rebar_app_utils:is_skipped_app(Config, AppFile) of
         {Config1, {true, SkippedApp}} ->
@@ -137,11 +168,11 @@ maybe_process_dir0(AppFile, ModuleSet, Config, CurrentCodePath,
             Config2 = increment_operations(Config1),
             {Config2, DirSet};
         {Config1, false} ->
-            process_dir0(Dir, Command, DirSet, Config1,
+            process_dir1(Dir, Command, DirSet, Config1,
                          CurrentCodePath, ModuleSet)
     end.
 
-process_dir0(Dir, Command, DirSet, Config0, CurrentCodePath,
+process_dir1(Dir, Command, DirSet, Config0, CurrentCodePath,
              {DirModules, ModuleSetFile}) ->
     %% Get the list of modules for "any dir". This is a catch-all list
     %% of modules that are processed in addition to modules associated
@@ -242,23 +273,20 @@ remember_cwd_subdir(Cwd, Subdirs) ->
 maybe_load_local_config(Dir, ParentConfig) ->
     %% We need to ensure we don't overwrite custom
     %% config when we are dealing with base_dir.
-    case processing_base_dir(ParentConfig, Dir) of
+    case rebar_utils:processing_base_dir(ParentConfig, Dir) of
         true ->
             ParentConfig;
         false ->
             rebar_config:new(ParentConfig)
     end.
 
-processing_base_dir(Config, Dir) ->
-    Dir == rebar_config:get_xconf(Config, base_dir).
-
 %%
 %% Given a list of directories and a set of previously processed directories,
 %% process each one we haven't seen yet
 %%
 process_each([], _Command, Config, _ModuleSetFile, DirSet) ->
-    %% reset cached setup_env
-    Config1 = rebar_config:reset_env(Config),
+    %% reset cached (setup_env) envs
+    Config1 = rebar_config:reset_envs(Config),
     {Config1, DirSet};
 process_each([Dir | Rest], Command, Config, ModuleSetFile, DirSet) ->
     case sets:is_element(Dir, DirSet) of
@@ -268,11 +296,10 @@ process_each([Dir | Rest], Command, Config, ModuleSetFile, DirSet) ->
         false ->
             {Config1, DirSet2} = process_dir(Dir, Config, Command, DirSet),
             Config2 = rebar_config:clean_config(Config, Config1),
-            %% reset cached setup_env
-            Config3 = rebar_config:reset_env(Config2),
+            %% reset cached (setup_env) envs
+            Config3 = rebar_config:reset_envs(Config2),
             process_each(Rest, Command, Config3, ModuleSetFile, DirSet2)
     end.
-
 
 %%
 %% Given a list of module sets from rebar.app and a directory, find
@@ -339,7 +366,7 @@ execute(Command, Modules, Config, ModuleFile, Env) ->
                     apply_hooks(post_hooks, NewConfig, Command, Env),
                     NewConfig;
                 {error, failed} ->
-                    ?ABORT;
+                    ?FAIL;
                 {Module, {error, _} = Other} ->
                     ?ABORT("~p failed while processing ~s in module ~s: ~s\n",
                            [Command, Dir, Module,
@@ -375,9 +402,11 @@ restore_code_path(no_change) ->
 restore_code_path({old, Path}) ->
     %% Verify that all of the paths still exist -- some dynamically
     %% added paths can get blown away during clean.
-    true = code:set_path([F || F <- Path, filelib:is_file(F)]),
+    true = code:set_path([F || F <- Path, erl_prim_loader_is_file(F)]),
     ok.
 
+erl_prim_loader_is_file(File) ->
+    erl_prim_loader:read_file_info(File) =/= error.
 
 expand_lib_dirs([], _Root, Acc) ->
     Acc;
@@ -434,7 +463,7 @@ setup_envs(Config, Modules) ->
                         case erlang:function_exported(M, setup_env, 1) of
                             true ->
                                 Env = M:setup_env(C),
-                                C1 = rebar_config:set_env(C, M, Env),
+                                C1 = rebar_config:save_env(C, M, Env),
                                 {C1, E++Env};
                             false ->
                                 T
@@ -553,3 +582,4 @@ load_plugin_module(Mod, Bin, Src) ->
             {module, Mod} = code:load_binary(Mod, Src, Bin),
             Mod
     end.
+
