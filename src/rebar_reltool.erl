@@ -30,6 +30,9 @@
          overlay/2,
          clean/2]).
 
+%% for internal use only
+-export([info/2]).
+
 -include("rebar.hrl").
 -include_lib("kernel/include/file.hrl").
 
@@ -67,7 +70,7 @@ generate(Config0, ReltoolFile) ->
 overlay(Config, ReltoolFile) ->
     %% Load the reltool configuration from the file
     {Config1, ReltoolConfig} = rebar_rel_utils:load_config(Config, ReltoolFile),
-    {Config1, process_overlay(Config, ReltoolConfig)}.
+    {process_overlay(Config, ReltoolConfig), Config1}.
 
 clean(Config, ReltoolFile) ->
     {Config1, ReltoolConfig} = rebar_rel_utils:load_config(Config, ReltoolFile),
@@ -79,6 +82,32 @@ clean(Config, ReltoolFile) ->
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
+
+info(help, generate) ->
+    info_help("Build release with reltool");
+info(help, clean) ->
+    info_help("Delete release");
+info(help, overlay) ->
+    info_help("Run reltool overlays only").
+
+info_help(Description) ->
+    ?CONSOLE(
+       "~s.~n"
+       "~n"
+       "Valid rebar.config options:~n"
+       "  ~n"
+       "Valid reltool.config options:~n"
+       "  {sys, []}~n"
+       "  {target_dir, \"target\"}~n"
+       "  {overlay_vars, \"overlay\"}~n"
+       "  {overlay, []}~n"
+       "Valid command line options:~n"
+       "  target_dir=target~n"
+       "  overlay_vars=VarsFile~n"
+       "  dump_spec=1 (write reltool target spec to reltool.spec)~n",
+       [
+        Description
+       ]).
 
 check_vsn() ->
     %% TODO: use application:load and application:get_key once we require
@@ -109,7 +138,8 @@ process_overlay(Config, ReltoolConfig) ->
     OverlayVars0 =
         dict:from_list([{erts_vsn, "erts-" ++ erlang:system_info(version)},
                         {rel_vsn, BootRelVsn},
-                        {target_dir, TargetDir}]),
+                        {target_dir, TargetDir},
+                        {hostname, net_adm:localhost()}]),
 
     %% Load up any variables specified by overlay_vars
     OverlayVars1 = overlay_vars(Config, OverlayVars0, ReltoolConfig),

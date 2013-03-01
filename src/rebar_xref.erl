@@ -28,13 +28,17 @@
 
 %% -------------------------------------------------------------------
 %% This module borrows heavily from http://github.com/etnt/exrefcheck project as
-%% written by Torbjorn Tornkvist <tobbe@kreditor.se>, Daniel Luna and others.
+%% written by Torbjorn Tornkvist <tobbe@kreditor.se>, Daniel Luna
+%% <daniel@lunas.se> and others.
 %% -------------------------------------------------------------------
 -module(rebar_xref).
 
 -include("rebar.hrl").
 
 -export([xref/2]).
+
+%% for internal use only
+-export([info/2]).
 
 %% ===================================================================
 %% Public API
@@ -43,7 +47,7 @@
 xref(Config, _) ->
     %% Spin up xref
     {ok, _} = xref:start(xref),
-    ok = xref:set_library_path(xref, code_path()),
+    ok = xref:set_library_path(xref, code_path(Config)),
 
     xref:set_default(xref, [{warnings,
                              rebar_config:get(Config, xref_warnings, false)},
@@ -99,6 +103,22 @@ xref(Config, _) ->
 %% Internal functions
 %% ===================================================================
 
+info(help, xref) ->
+    ?CONSOLE(
+       "Run cross reference analysis.~n"
+       "~n"
+       "Valid rebar.config options:~n"
+       "  ~p~n"
+       "  ~p~n"
+       "  ~p~n",
+       [
+        {xref_warnings, false},
+        {xref_checks, [exports_not_used, undefined_function_calls]},
+        {xref_queries,
+         [{"(xc - uc) || (xu - x - b"
+           " - (\"mod\":\".*foo\"/\"4\"))",[]}]}
+       ]).
+
 check_exports_not_used() ->
     {ok, UnusedExports0} = xref:analyze(xref, exports_not_used),
     UnusedExports = filter_away_ignored(UnusedExports0),
@@ -131,9 +151,17 @@ check_query({Query, Value}) ->
             true
     end.
 
-code_path() ->
-    [P || P <- code:get_path(),
-          filelib:is_dir(P)] ++ [filename:join(rebar_utils:get_cwd(), "ebin")].
+code_path(Config) ->
+    %% Slight hack to ensure that sub_dirs get properly included
+    %% in code path for xref -- otherwise one gets a lot of undefined
+    %% functions, even though those functions are present as part
+    %% of compilation. H/t to @dluna. Long term we should tie more
+    %% properly into the overall compile code path if possible.
+    BaseDir = rebar_config:get_xconf(Config, base_dir),
+    [P || P <- code:get_path() ++
+              [filename:join(BaseDir, filename:join(SubDir, "ebin"))
+               || SubDir <- rebar_config:get(Config, sub_dirs, [])],
+          filelib:is_dir(P)].
 
 %%
 %% Ignore behaviour functions, and explicitly marked functions

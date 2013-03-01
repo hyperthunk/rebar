@@ -27,8 +27,11 @@
 -module(rebar_port_compiler).
 
 -export([compile/2,
-         clean/2,
-         setup_env/1]).
+         clean/2]).
+
+%% for internal use only
+-export([setup_env/1,
+         info/2]).
 
 -include("rebar.hrl").
 
@@ -92,8 +95,8 @@
                objects = [] :: [file:filename(), ...],
                opts = [] ::list() | []}).
 
-compile(Config, _AppFile) ->
-    case get_specs(Config) of
+compile(Config, AppFile) ->
+    case get_specs(Config, AppFile) of
         [] ->
             ok;
         Specs ->
@@ -130,8 +133,8 @@ compile(Config, _AppFile) ->
               end, Specs)
     end.
 
-clean(Config, _AppFile) ->
-    case get_specs(Config) of
+clean(Config, AppFile) ->
+    case get_specs(Config, AppFile) of
         [] ->
             ok;
         Specs ->
@@ -149,12 +152,38 @@ setup_env(Config) ->
 %% Internal functions
 %% ===================================================================
 
+info(help, compile) ->
+    info_help("Build port sources");
+info(help, clean) ->
+    info_help("Delete port build results").
+
+info_help(Description) ->
+    ?CONSOLE(
+       "~s.~n"
+       "~n"
+       "Valid rebar.config options:~n"
+       "  ~p~n"
+       "  ~p~n",
+       [
+        Description,
+        {port_env, [{"CFLAGS", "$CFLAGS -Ifoo"},
+                    {"freebsd", "LDFLAGS", "$LDFLAGS -lfoo"}]},
+        {port_specs, [{"priv/so_name.so", ["c_src/*.c"]},
+                      {"linux", "priv/hello_linux", ["c_src/hello_linux.c"]},
+                      {"linux", "priv/hello_linux", ["c_src/*.c"], [{env, []}]}]}
+       ]).
+
 setup_env(Config, ExtraEnv) ->
     %% Extract environment values from the config (if specified) and
     %% merge with the default for this operating system. This enables
     %% max flexibility for users.
     DefaultEnv  = filter_env(default_env(), []),
-    RawPortEnv = rebar_config:get_list(Config, port_env, []),
+
+    %% Get any port-specific envs; use port_env first and then fallback
+    %% to port_envs for compatibility
+    RawPortEnv = rebar_config:get_list(Config, port_env,
+                          rebar_config:get_list(Config, port_envs, [])),
+
     PortEnv = filter_env(RawPortEnv, []),
     Defines = get_defines(Config),
     OverrideEnv = Defines ++ PortEnv ++ filter_env(ExtraEnv, []),
@@ -242,11 +271,38 @@ needs_link(SoName, NewBins) ->
 %% == port_specs ==
 %%
 
-get_specs(Config) ->
-    PortSpecs = rebar_config:get_local(Config, port_specs, []),
-    Filtered = filter_port_specs(PortSpecs),
-    OsType = os:type(),
-    [get_port_spec(Config, OsType, Spec) || Spec <- Filtered].
+get_specs(Config, AppFile) ->
+    Specs = case rebar_config:get_local(Config, port_specs, []) of
+                [] ->
+                    %% No spec provided. Construct a spec
+                    %% from old-school so_name and sources
+                    [port_spec_from_legacy(Config, AppFile)];
+                PortSpecs ->
+                    Filtered = filter_port_specs(PortSpecs),
+                    OsType = os:type(),
+                    [get_port_spec(Config, OsType, Spec) || Spec <- Filtered]
+            end,
+    [S || S <- Specs, S#spec.sources /= []].
+
+port_spec_from_legacy(Config, AppFile) ->
+    %% Get the target from the so_name variable
+    Target = case rebar_config:get(Config, so_name, undefined) of
+                 undefined ->
+                     %% Generate a sensible default from app file
+                     {_, AppName} = rebar_app_utils:app_name(Config, AppFile),
+                     filename:join("priv",
+                                   lists:concat([AppName, "_drv.so"]));
+                 AName ->
+                     %% Old form is available -- use it
+                     filename:join("priv", AName)
+             end,
+    %% Get the list of source files from port_sources
+    Sources = port_sources(rebar_config:get_list(Config, port_sources,
+                                                 ["c_src/*.c"])),
+    #spec { type = target_type(Target),
+            target = maybe_switch_extension(os:type(), Target),
+            sources = Sources,
+            objects = port_objects(Sources) }.
 
 filter_port_specs(Specs) ->
     [S || S <- Specs, filter_port_spec(S)].
@@ -367,7 +423,7 @@ expand_vars_loop([], Recurse, Vars, Count) ->
     expand_vars_loop(Recurse, [], Vars, Count-1);
 expand_vars_loop([{K, V} | Rest], Recurse, Vars, Count) ->
     %% Identify the variables that need expansion in this value
-    ReOpts = [global, {capture, all_but_first, list}],
+    ReOpts = [global, {capture, all_but_first, list}, unicode],
     case re:run(V, "\\\${?(\\w+)}?", ReOpts) of
         {match, Matches} ->
             %% Identify the unique variables that need to be expanded
@@ -440,8 +496,8 @@ erts_dir() ->
     lists:concat([code:root_dir(), "/erts-", erlang:system_info(version)]).
 
 os_env() ->
-    Os = [list_to_tuple(re:split(S, "=", [{return, list}, {parts, 2}])) ||
-             S <- os:getenv()],
+    ReOpts = [{return, list}, {parts, 2}, unicode],
+    Os = [list_to_tuple(re:split(S, "=", ReOpts)) || S <- os:getenv()],
     %% Drop variables without a name (win32)
     [T1 || {K, _V} = T1 <- Os, K =/= []].
 
